@@ -23,8 +23,8 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
 
     private var playerHp = 5
     private var playerMaxHp = 5
-    private var playerMana = 100
-    private val playerMaxMana = 100
+    private var playerMana = 200
+    private val playerMaxMana = 200
 
     private var playerXp = 0
     private var playerLevel = 1
@@ -35,28 +35,41 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     private var moveJoystick: Joystick? = null
     private var shootJoystick: Joystick? = null
 
+    // Кнопка смены оружия — координаты и размер
+    private var swapBtnX = 0f
+    private var swapBtnY = 0f
+    private var swapBtnR = 80f
+    private var swapPointerId = -1
+
     private val bullets = mutableListOf<Bullet>()
     private val enemyBullets = mutableListOf<Bullet>()
 
-    private var lastShotTime = 0L
-    private val shotCooldown = 220L
-
     private val walls = mutableListOf<Wall>()
     private val enemies = mutableListOf<Enemy>()
+    private val targets = mutableListOf<Target>()
     private val pickups = mutableListOf<Pickup>()
     private val particles = mutableListOf<Particle>()
+
+    // Оружие
+    private val meleeWeapons = mutableListOf<Weapon>()  // ближний бой
+    private val rangedWeapons = mutableListOf<Weapon>() // дальний бой
+    private var meleeIndex = 0
+    private var rangedIndex = 0
+    private var isMeleeActive = false // true = ближнее, false = дальнее
 
     private val rooms = mutableListOf<Room>()
     private var currentRoomIndex = 0
     private val allDoors = mutableListOf<Door>()
 
     private var roomCleared = false
+    private var isTrainingRoom = false
 
     private var gameState = GameState.PLAYING
     enum class GameState { PLAYING, GAME_OVER, VICTORY }
 
     private var lastTime = 0L
     private var lastPlayerHit = 0L
+    private var lastMeleeAttack = 0L
 
     private var movePointerId = -1
     private var shootPointerId = -1
@@ -76,6 +89,22 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
             moveJoystick = Joystick(width * 0.15f, height * 0.75f, Math.min(width, height) * 0.12f)
             shootJoystick = Joystick(width * 0.85f, height * 0.75f, Math.min(width, height) * 0.12f)
 
+            // Кнопка смены оружия — по центру внизу
+            swapBtnX = width / 2f
+            swapBtnY = height * 0.88f
+            swapBtnR = 70f
+
+            // Стартовое оружие
+            meleeWeapons.clear()
+            meleeWeapons.add(Weapon.knife())    // нож всегда
+            meleeIndex = 0
+
+            rangedWeapons.clear()
+            rangedWeapons.add(Weapon.pistol())  // пистолет стартовый
+            rangedIndex = 0
+
+            isMeleeActive = false
+
             generateLevel()
             buildRoomWalls()
             loadRoom(0)
@@ -90,23 +119,25 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     private fun generateLevel() {
         rooms.clear()
         allDoors.clear()
-        val roomCount = 3 + (Math.random() * 4).toInt()
-        for (i in 0 until roomCount) {
-            val isLast = (i == roomCount - 1)
+
+        // Комната 0 — БАЗА (тренировка с мишенями)
+        rooms.add(Room(0, 0, 5, isBase = true))
+
+        // Остальные — боевые, 3-5 штук
+        val fightCount = 3 + (Math.random() * 3).toInt()
+        for (i in 1..fightCount) {
+            val isLast = (i == fightCount)
             val enemyCount: Int
             val enemyType: Int
             if (isLast) {
                 enemyCount = 1
-                enemyType = 4
-            } else if (i == 0) {
-                enemyCount = 3
-                enemyType = 0
+                enemyType = 4 // босс
             } else if (i == 1) {
-                enemyCount = 3
-                enemyType = 1
+                enemyCount = 3; enemyType = 0
             } else if (i == 2) {
-                enemyCount = 2
-                enemyType = 2
+                enemyCount = 3; enemyType = 1
+            } else if (i == 3) {
+                enemyCount = 2; enemyType = 2
             } else {
                 enemyCount = 3 + (Math.random() * 2).toInt()
                 enemyType = (Math.random() * 4).toInt()
@@ -155,35 +186,47 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         val room = rooms[index]
 
         enemies.clear()
+        targets.clear()
         bullets.clear()
         enemyBullets.clear()
         pickups.clear()
         particles.clear()
 
         roomCleared = false
+        isTrainingRoom = room.isBase
 
         playerX = roomLeft + playerSize + 40f
         playerY = (roomTop + roomBottom) / 2f
 
-        val total = room.enemyCount
-        for (i in 0 until total) {
-            val ex: Float
-            val ey: Float
-            if (room.enemyType == 4) {
-                ex = roomRight - 250f
-                ey = (roomTop + roomBottom) / 2f
-            } else {
-                ex = width * (0.5f + Math.random().toFloat() * 0.4f)
-                ey = height * (0.2f + Math.random().toFloat() * 0.6f)
+        if (room.isBase) {
+            // База — мишени
+            targets.add(Target(width * 0.55f, height * 0.3f))
+            targets.add(Target(width * 0.75f, height * 0.5f))
+            targets.add(Target(width * 0.55f, height * 0.7f))
+            roomCleared = true
+        } else if (!room.cleared) {
+            val total = room.enemyCount
+            for (i in 0 until total) {
+                val ex: Float
+                val ey: Float
+                if (room.enemyType == 4) {
+                    ex = roomRight - 250f
+                    ey = (roomTop + roomBottom) / 2f
+                } else {
+                    ex = width * (0.5f + Math.random().toFloat() * 0.4f)
+                    ey = height * (0.2f + Math.random().toFloat() * 0.6f)
+                }
+                val type = when (room.enemyType) {
+                    0 -> EnemyType.NORMAL
+                    1 -> EnemyType.FAST
+                    2 -> EnemyType.TANK
+                    3 -> EnemyType.SHOOTER
+                    else -> EnemyType.BOSS
+                }
+                enemies.add(Enemy(ex, ey, type))
             }
-            val type = when (room.enemyType) {
-                0 -> EnemyType.NORMAL
-                1 -> EnemyType.FAST
-                2 -> EnemyType.TANK
-                3 -> EnemyType.SHOOTER
-                else -> EnemyType.BOSS
-            }
-            enemies.add(Enemy(ex, ey, type))
+        } else {
+            roomCleared = true
         }
 
         updateDoorsLock()
@@ -196,151 +239,163 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
             d.isOpen = !locked
         }
     }
+override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
 
-    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
+override fun surfaceDestroyed(holder: SurfaceHolder) {
+    running = false
+    try { thread?.join() } catch (e: InterruptedException) {}
+}
 
-    override fun surfaceDestroyed(holder: SurfaceHolder) {
-        running = false
-        try { thread?.join() } catch (e: InterruptedException) {}
+fun resume() {
+    if (!running && width > 0 && height > 0) {
+        running = true
+        thread = Thread(this).also { it.start() }
     }
+}
 
-    fun resume() {
-        if (!running && width > 0 && height > 0) {
-            running = true
-            thread = Thread(this).also { it.start() }
+fun pause() {
+    running = false
+}
+
+override fun run() {
+    while (running) {
+        val now = System.currentTimeMillis()
+        val dt = if (lastTime == 0L) 0L else now - lastTime
+        lastTime = now
+        try {
+            update(dt)
+            drawFrame()
+        } catch (e: Throwable) {
+            android.util.Log.e("PixelDungeon", "loop crash", e)
+            running = false
+        }
+        try { Thread.sleep(16) } catch (e: InterruptedException) {}
+    }
+}
+
+private fun update(dt: Long) {
+    if (gameState != GameState.PLAYING) return
+    updatePlayer()
+    updateShooting()
+    updateMelee()
+    updateBullets()
+    updateEnemies()
+    updatePickups()
+    updateParticles()
+    checkRoomClear()
+    checkDoorsTransition()
+}
+
+private fun checkRoomClear() {
+    if (!roomCleared && enemies.isEmpty()) {
+        roomCleared = true
+        rooms[currentRoomIndex].cleared = true
+        updateDoorsLock()
+        if (currentRoomIndex == rooms.size - 1) {
+            gameState = GameState.VICTORY
         }
     }
+}
 
-    fun pause() {
-        running = false
-    }
-
-    override fun run() {
-        while (running) {
-            val now = System.currentTimeMillis()
-            val dt = if (lastTime == 0L) 0L else now - lastTime
-            lastTime = now
-            try {
-                update(dt)
-                drawFrame()
-            } catch (e: Throwable) {
-                android.util.Log.e("PixelDungeon", "loop crash", e)
-                running = false
+private fun checkDoorsTransition() {
+    if (!roomCleared) return
+    for (d in allDoors) {
+        if (!d.isOpen) continue
+        val doorCenterX = d.x + d.w / 2f
+        val doorCenterY = d.y + d.h / 2f
+        val dx = playerX - doorCenterX
+        val dy = playerY - doorCenterY
+        val dist = Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+        if (dist < 80f) {
+            val nextIndex = when (d.side) {
+                DoorSide.LEFT -> currentRoomIndex - 1
+                DoorSide.RIGHT -> currentRoomIndex + 1
+                else -> currentRoomIndex
             }
-            try { Thread.sleep(16) } catch (e: InterruptedException) {}
-        }
-    }
-
-    private fun update(dt: Long) {
-        if (gameState != GameState.PLAYING) return
-        updatePlayer()
-        updateShooting()
-        updateBullets()
-        updateEnemies()
-        updatePickups()
-        updateParticles()
-        checkRoomClear()
-        checkDoorsTransition()
-    }
-
-    private fun checkRoomClear() {
-        if (!roomCleared && enemies.isEmpty()) {
-            roomCleared = true
-            rooms[currentRoomIndex].cleared = true
-            updateDoorsLock()
-            if (currentRoomIndex == rooms.size - 1) {
-                gameState = GameState.VICTORY
-            }
-        }
-    }
-
-    private fun checkDoorsTransition() {
-        if (!roomCleared) return
-        for (d in allDoors) {
-            if (!d.isOpen) continue
-            val doorCenterX = d.x + d.w / 2f
-            val doorCenterY = d.y + d.h / 2f
-            val dx = playerX - doorCenterX
-            val dy = playerY - doorCenterY
-            val dist = Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
-            if (dist < 80f) {
-                val nextIndex = when (d.side) {
-                    DoorSide.LEFT -> currentRoomIndex - 1
-                    DoorSide.RIGHT -> currentRoomIndex + 1
-                    else -> currentRoomIndex
-                }
-                if (nextIndex in 0 until rooms.size) {
-                    loadRoom(nextIndex)
-                    when (d.side) {
-                        DoorSide.LEFT -> { playerX = roomRight - playerSize - 40f; playerY = height / 2f }
-                        DoorSide.RIGHT -> { playerX = roomLeft + playerSize + 40f; playerY = height / 2f }
-                        else -> {}
+            if (nextIndex in 0 until rooms.size) {
+                loadRoom(nextIndex)
+                when (d.side) {
+                    DoorSide.LEFT -> {
+                        playerX = roomRight - playerSize - 40f
+                        playerY = height / 2f
                     }
-                    return
+                    DoorSide.RIGHT -> {
+                        playerX = roomLeft + playerSize + 40f
+                        playerY = height / 2f
+                    }
+                    else -> {}
                 }
+                return
             }
         }
     }
+}
 
-    private fun spawnParticles(x: Float, y: Float, color: Int, count: Int = 6) {
-        for (i in 0 until count) {
-            val angle = Math.random() * Math.PI * 2
-            val sp = 2f + Math.random().toFloat() * 3f
-            particles.add(Particle(x, y, Math.cos(angle).toFloat() * sp, Math.sin(angle).toFloat() * sp, color))
-        }
+private fun spawnParticles(x: Float, y: Float, color: Int, count: Int = 6) {
+    for (i in 0 until count) {
+        val angle = Math.random() * Math.PI * 2
+        val sp = 2f + Math.random().toFloat() * 3f
+        particles.add(Particle(
+            x, y,
+            Math.cos(angle).toFloat() * sp,
+            Math.sin(angle).toFloat() * sp,
+            color
+        ))
     }
+}
 
-    private fun dropLoot(x: Float, y: Float) {
-        val r = Math.random()
-        when {
-            r < 0.55f -> pickups.add(Pickup(x, y, PickupType.COIN))
-            r < 0.80f -> pickups.add(Pickup(x, y, PickupType.HEAL))
-            else -> pickups.add(Pickup(x, y, PickupType.MANA))
-        }
+private fun dropLoot(x: Float, y: Float) {
+    val r = Math.random()
+    when {
+        r < 0.55f -> pickups.add(Pickup(x, y, PickupType.COIN))
+        r < 0.80f -> pickups.add(Pickup(x, y, PickupType.HEAL))
+        else -> pickups.add(Pickup(x, y, PickupType.MANA))
     }
+}
 
-    private fun updatePickups() {
-        for (p in pickups) p.update()
-        val it = pickups.iterator()
-        while (it.hasNext()) {
-            val p = it.next()
-            val dx = playerX - p.x
-            val dy = playerY - p.y
-            val dist = Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
-            if (dist < (playerSize / 2 + p.radius)) {
-                when (p.type) {
-                    PickupType.COIN -> coins += 1
-                    PickupType.HEAL -> if (playerHp < playerMaxHp) playerHp += 1
-                    PickupType.MANA -> playerMana = (playerMana + 30).coerceAtMost(playerMaxMana)
-                }
-                it.remove()
+private fun updatePickups() {
+    for (p in pickups) p.update()
+    val it = pickups.iterator()
+    while (it.hasNext()) {
+        val p = it.next()
+        val dx = playerX - p.x
+        val dy = playerY - p.y
+        val dist = Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+        if (dist < (playerSize / 2 + p.radius)) {
+            when (p.type) {
+                PickupType.COIN -> coins += 1
+                PickupType.HEAL -> if (playerHp < playerMaxHp) playerHp += 1
+                PickupType.MANA -> playerMana = (playerMana + 30).coerceAtMost(playerMaxMana)
             }
+            it.remove()
         }
     }
+}
 
-    private fun updateParticles() {
-        val it = particles.iterator()
-        while (it.hasNext()) {
-            val p = it.next()
-            p.update()
-            if (!p.alive) it.remove()
-        }
+private fun updateParticles() {
+    val it = particles.iterator()
+    while (it.hasNext()) {
+        val p = it.next()
+        p.update()
+        if (!p.alive) it.remove()
     }
+}
 
-    private fun addXp(amount: Int) {
-        playerXp += amount
-        while (playerXp >= xpToNextLevel) {
-            playerXp -= xpToNextLevel
-            playerLevel++
-            xpToNextLevel = (xpToNextLevel * 1.4f).toInt()
-            if (playerLevel % 2 == 0) {
-                playerMaxHp += 1
-                playerHp = playerMaxHp
-            } else {
-                playerSpeed += 0.5f
-            }
+private fun addXp(amount: Int) {
+    playerXp += amount
+    while (playerXp >= xpToNextLevel) {
+        playerXp -= xpToNextLevel
+        playerLevel++
+        xpToNextLevel = (xpToNextLevel * 1.4f).toInt()
+        if (playerLevel % 2 == 0) {
+            playerMaxHp += 1
+            playerHp = playerMaxHp
+        } else {
+            playerSpeed += 0.5f
         }
     }
+}
+
 private fun updatePlayer() {
     val mj = moveJoystick ?: return
     val newX = playerX + mj.dx * playerSpeed
@@ -427,19 +482,72 @@ private fun pushOutOfEnemies() {
     }
 }
 
+// === СТРЕЛЬБА ===
 private fun updateShooting() {
+    if (isMeleeActive) return  // если активно ближнее — не стреляем
+
     val sj = shootJoystick ?: return
     if (sj.dx == 0f && sj.dy == 0f) return
-    val now = System.currentTimeMillis()
-    if (now - lastShotTime < shotCooldown) return
-    if (playerMana <= 0) return
-    lastShotTime = now
-    playerMana -= 1
-    val bullet = Bullet(playerX, playerY, sj.dx, sj.dy, speed = 18f)
-    bullet.isEnemy = false
-    bullets.add(bullet)
+    if (rangedWeapons.isEmpty()) return
+
+    val weapon = rangedWeapons[rangedIndex]
+    if (!weapon.canShoot()) return
+
+    // Мана
+    if (!isTrainingRoom) {
+        if (playerMana <= 0) return
+        playerMana -= 1
+    }
+
+    // Спавним пули (одну или несколько для дробовика)
+    if (weapon.bulletCount == 1) {
+        val bullet = Bullet(playerX, playerY, sj.dx, sj.dy,
+            speed = weapon.bulletSpeed, damage = weapon.damage)
+        bullet.isEnemy = false
+        bullets.add(bullet)
+    } else {
+        // Веер
+        val baseAngle = Math.atan2(sj.dy.toDouble(), sj.dx.toDouble())
+        for (i in 0 until weapon.bulletCount) {
+            val offset = (i - (weapon.bulletCount - 1) / 2.0) * weapon.spreadAngle
+            val angle = baseAngle + offset
+            val bx = Math.cos(angle).toFloat()
+            val by = Math.sin(angle).toFloat()
+            val bullet = Bullet(playerX, playerY, bx, by,
+                speed = weapon.bulletSpeed, damage = weapon.damage)
+            bullet.isEnemy = false
+            bullets.add(bullet)
+        }
+    }
 }
 
+// === БЛИЖНИЙ БОЙ (НОЖ/МЕЧ) ===
+private fun updateMelee() {
+    if (!isMeleeActive) return
+    if (meleeWeapons.isEmpty()) return
+
+    val weapon = meleeWeapons[meleeIndex]
+    val now = System.currentTimeMillis()
+    if (now - lastMeleeAttack < weapon.cooldown) return
+
+    // Ищем врага близко (в радиусе 100px)
+    val meleeRange = 100f
+    var hitAny = false
+    for (e in enemies) {
+        val dx = e.x - playerX
+        val dy = e.y - playerY
+        val dist = Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+        if (dist < meleeRange + e.size / 2) {
+            e.hp -= weapon.damage
+            spawnParticles(e.x, e.y, Color.rgb(255, 200, 100), 6)
+            hitAny = true
+        }
+    }
+
+    if (hitAny) {
+        lastMeleeAttack = now
+    }
+}
 private fun updateBullets() {
     val it = bullets.iterator()
     while (it.hasNext()) {
@@ -459,16 +567,32 @@ private fun updateBullets() {
             }
         }
         if (removed) continue
+
+        // Попадание в мишень
+        for (t in targets) {
+            if (b.x > t.x - t.size / 2 && b.x < t.x + t.size / 2 &&
+                b.y > t.y - t.size / 2 && b.y < t.y + t.size / 2) {
+                t.hits += 1
+                spawnParticles(b.x, b.y, Color.rgb(255, 200, 100), 8)
+                it.remove()
+                removed = true
+                break
+            }
+        }
+        if (removed) continue
+
+        // Попадание в врага
         for (e in enemies) {
             if (b.x > e.x - e.size / 2 && b.x < e.x + e.size / 2 &&
                 b.y > e.y - e.size / 2 && b.y < e.y + e.size / 2) {
-                e.hp -= 1
+                e.hp -= b.damage
                 spawnParticles(b.x, b.y, Color.rgb(255, 80, 80), 6)
                 it.remove()
                 break
             }
         }
     }
+
     val it2 = enemyBullets.iterator()
     while (it2.hasNext()) {
         val b = it2.next()
@@ -502,7 +626,7 @@ private fun updateEnemies() {
         val dist = Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
         if (dist < e.preferredDistance + 80f && e.canShoot()) {
             val len = if (dist < 1f) 1f else dist
-            val bullet = Bullet(e.x, e.y, dx / len, dy / len, speed = 10f)
+            val bullet = Bullet(e.x, e.y, dx / len, dy / len, speed = 10f, damage = 1)
             bullet.isEnemy = true
             enemyBullets.add(bullet)
         }
@@ -515,7 +639,7 @@ private fun updateEnemies() {
             b.y > playerY - playerSize / 2 && b.y < playerY + playerSize / 2) {
             if (System.currentTimeMillis() - lastPlayerHit > 500) {
                 lastPlayerHit = System.currentTimeMillis()
-                playerHp -= 1
+                playerHp -= b.damage
                 spawnParticles(playerX, playerY, Color.rgb(255, 60, 60), 8)
                 if (playerHp <= 0) {
                     playerHp = 0
@@ -536,11 +660,23 @@ private fun restartGame() {
     coins = 0
     playerSpeed = 8f
     playerMaxHp = 5
+
     bullets.clear()
     enemyBullets.clear()
     enemies.clear()
+    targets.clear()
     pickups.clear()
     particles.clear()
+
+    // Сброс оружия
+    meleeWeapons.clear()
+    meleeWeapons.add(Weapon.knife())
+    meleeIndex = 0
+    rangedWeapons.clear()
+    rangedWeapons.add(Weapon.pistol())
+    rangedIndex = 0
+    isMeleeActive = false
+
     generateLevel()
     buildRoomWalls()
     loadRoom(0)
@@ -569,12 +705,14 @@ private fun drawGame(canvas: Canvas) {
 
     for (w in walls) w.draw(canvas, paint)
     for (d in allDoors) d.draw(canvas, paint)
+    for (t in targets) t.draw(canvas, paint)
     for (p in pickups) p.draw(canvas, paint)
     for (e in enemies) e.draw(canvas, paint)
     for (b in bullets) b.draw(canvas, paint)
     for (b in enemyBullets) b.draw(canvas, paint)
     for (p in particles) p.draw(canvas, paint)
 
+    // Игрок
     paint.color = Color.rgb(80, 200, 120)
     canvas.drawRect(
         playerX - playerSize / 2, playerY - playerSize / 2,
@@ -583,13 +721,24 @@ private fun drawGame(canvas: Canvas) {
     paint.color = Color.WHITE
     canvas.drawCircle(playerX, playerY, 5f, paint)
 
+    // В тренировочной комнате — рамка вокруг базы
+    if (isTrainingRoom) {
+        paint.color = Color.argb(150, 100, 200, 255)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 4f
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+        paint.style = Paint.Style.FILL
+    }
+
     drawHud(canvas)
+    drawWeaponButton(canvas)
     moveJoystick?.draw(canvas)
     shootJoystick?.draw(canvas)
 
     if (gameState == GameState.GAME_OVER) drawGameOver(canvas)
     else if (gameState == GameState.VICTORY) drawVictory(canvas)
     else if (roomCleared && currentRoomIndex < rooms.size - 1) drawRoomClearedHint(canvas)
+    else if (isTrainingRoom) drawTrainingHint(canvas)
 }
 
 private fun drawHud(canvas: Canvas) {
@@ -645,18 +794,70 @@ private fun drawHud(canvas: Canvas) {
 
     paint.textSize = 32f
     paint.color = Color.rgb(255, 220, 80)
-    canvas.drawText("💰 $coins", width - 220f, margin + 30f, paint)
+    canvas.drawText("💰 $coins", width - 260f, margin + 30f, paint)
     paint.color = Color.WHITE
-    canvas.drawText("Комната ${currentRoomIndex + 1}/${rooms.size}", width - 220f, margin + 70f, paint)
+
+    val roomName = if (isTrainingRoom) "База" else "Комната ${currentRoomIndex + 1}/${rooms.size}"
+    canvas.drawText(roomName, width - 260f, margin + 70f, paint)
+
     paint.textSize = 22f
     paint.color = Color.rgb(200, 200, 200)
-    canvas.drawText("Врагов: ${enemies.size}", width - 220f, margin + 105f, paint)
+    if (isTrainingRoom) {
+        canvas.drawText("Тренировка", width - 260f, margin + 105f, paint)
+    } else {
+        canvas.drawText("Врагов: ${enemies.size}", width - 260f, margin + 105f, paint)
+    }
+}
+
+private fun drawWeaponButton(canvas: Canvas) {
+    // Круглая кнопка смены оружия
+    paint.color = Color.argb(180, 60, 60, 90)
+    canvas.drawCircle(swapBtnX, swapBtnY, swapBtnR, paint)
+    paint.color = Color.argb(220, 200, 200, 220)
+    paint.style = Paint.Style.STROKE
+    paint.strokeWidth = 5f
+    canvas.drawCircle(swapBtnX, swapBtnY, swapBtnR, paint)
+    paint.style = Paint.Style.FILL
+
+    // Текст на кнопке — название текущего
+    val weaponName: String
+    if (isMeleeActive) {
+        weaponName = if (meleeWeapons.isNotEmpty()) meleeWeapons[meleeIndex].getName() else "Нож"
+    } else {
+        weaponName = if (rangedWeapons.isNotEmpty()) rangedWeapons[rangedIndex].getName() else "Пистолет"
+    }
+
+    paint.color = Color.WHITE
+    paint.textSize = 22f
+    paint.textAlign = Paint.Align.CENTER
+
+    // Стрелки вверх/вниз для подсказки
+    paint.textSize = 18f
+    paint.color = Color.rgb(180, 220, 255)
+    canvas.drawText("▲", swapBtnX, swapBtnY - swapBtnR + 24f, paint)
+    canvas.drawText("▼", swapBtnX, swapBtnY + swapBtnR - 12f, paint)
+
+    paint.textSize = 22f
+    paint.color = Color.WHITE
+    canvas.drawText(weaponName, swapBtnX, swapBtnY + 8f, paint)
+
+    paint.textAlign = Paint.Align.LEFT
 }
     private fun drawRoomClearedHint(canvas: Canvas) {
         paint.color = Color.rgb(120, 220, 150)
         paint.textSize = 40f
         paint.textAlign = Paint.Align.CENTER
         canvas.drawText("Комната зачищена! →", width / 2f, 100f, paint)
+        paint.textAlign = Paint.Align.LEFT
+    }
+
+    private fun drawTrainingHint(canvas: Canvas) {
+        paint.color = Color.rgb(120, 200, 255)
+        paint.textSize = 32f
+        paint.textAlign = Paint.Align.CENTER
+        canvas.drawText("Тренировка — мана не тратится", width / 2f, 60f, paint)
+        paint.textSize = 24f
+        canvas.drawText("→ Иди в правую дверь, когда готов", width / 2f, height - 40f, paint)
         paint.textAlign = Paint.Align.LEFT
     }
 
@@ -714,6 +915,20 @@ private fun drawHud(canvas: Canvas) {
         canvas.drawPath(path, paint)
     }
 
+    private fun swapWeapon() {
+        if (isMeleeActive) {
+            // Переключение на дальнее — если есть
+            if (rangedWeapons.isNotEmpty()) {
+                isMeleeActive = false
+            }
+        } else {
+            // Переключение на ближнее — если есть
+            if (meleeWeapons.isNotEmpty()) {
+                isMeleeActive = true
+            }
+        }
+    }
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (gameState == GameState.GAME_OVER || gameState == GameState.VICTORY) {
             if (event.actionMasked == MotionEvent.ACTION_DOWN) restartGame()
@@ -723,24 +938,37 @@ private fun drawHud(canvas: Canvas) {
         val action = event.actionMasked
         val pointerIndex = event.actionIndex
         val pointerId = event.getPointerId(pointerIndex)
+        val px = event.getX(pointerIndex)
+        val py = event.getY(pointerIndex)
 
         when (action) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
-                val x = event.getX(pointerIndex)
-                val y = event.getY(pointerIndex)
-                val mj = moveJoystick
-                if (mj != null && movePointerId == -1 && mj.isInside(x, y)) {
-                    movePointerId = pointerId
-                    mj.start(x, y)
+                // Проверка кнопки смены оружия
+                val btnDx = px - swapBtnX
+                val btnDy = py - swapBtnY
+                val btnDist = Math.sqrt((btnDx * btnDx + btnDy * btnDy).toDouble()).toFloat()
+                if (btnDist < swapBtnR) {
+                    swapWeapon()
                     return true
                 }
+
+                // Левый джойстик
+                val mj = moveJoystick
+                if (mj != null && movePointerId == -1 && mj.isInside(px, py)) {
+                    movePointerId = pointerId
+                    mj.start(px, py)
+                    return true
+                }
+
+                // Правый джойстик
                 val sj = shootJoystick
-                if (sj != null && shootPointerId == -1 && sj.isInside(x, y)) {
+                if (sj != null && shootPointerId == -1 && sj.isInside(px, py)) {
                     shootPointerId = pointerId
-                    sj.start(x, y)
+                    sj.start(px, py)
                     return true
                 }
             }
+
             MotionEvent.ACTION_MOVE -> {
                 for (i in 0 until event.pointerCount) {
                     val id = event.getPointerId(i)
@@ -750,6 +978,7 @@ private fun drawHud(canvas: Canvas) {
                     else if (id == shootPointerId) shootJoystick?.move(x, y)
                 }
             }
+
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
                 if (pointerId == movePointerId) {
                     moveJoystick?.stop()
@@ -759,6 +988,7 @@ private fun drawHud(canvas: Canvas) {
                     shootPointerId = -1
                 }
             }
+
             MotionEvent.ACTION_CANCEL -> {
                 moveJoystick?.stop()
                 shootJoystick?.stop()

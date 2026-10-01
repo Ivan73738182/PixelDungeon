@@ -9,7 +9,8 @@ class Bullet(
     var y: Float,
     var dx: Float,
     var dy: Float,
-    var speed: Float = 18f
+    var speed: Float = 18f,
+    var damage: Int = 1
 ) {
     var alive = true
     var isEnemy = false
@@ -22,13 +23,11 @@ class Bullet(
 
     fun draw(canvas: Canvas, paint: Paint) {
         if (isEnemy) {
-            // Вражеская пуля — красная
             paint.color = Color.argb(80, 255, 80, 80)
             canvas.drawCircle(x, y, radius * 1.8f, paint)
             paint.color = Color.rgb(255, 120, 120)
             canvas.drawCircle(x, y, radius, paint)
         } else {
-            // Пуля игрока — жёлтая
             paint.color = Color.argb(80, 255, 220, 80)
             canvas.drawCircle(x, y, radius * 1.8f, paint)
             paint.color = Color.rgb(255, 240, 150)
