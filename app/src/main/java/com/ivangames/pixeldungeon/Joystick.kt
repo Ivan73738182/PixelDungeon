@@ -3,7 +3,6 @@ package com.ivangames.pixeldungeon
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.view.MotionEvent
 
 class Joystick(
     val centerX: Float,
@@ -39,35 +38,25 @@ class Joystick(
         canvas.drawCircle(knobX, knobY, radius * 0.4f, knobPaint)
     }
 
-    fun handleTouch(event: MotionEvent): Boolean {
-        val x = event.x
-        val y = event.y
-        when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                if (dist(x, y, centerX, centerY) < radius * 1.5f) {
-                    active = true
-                    update(x, y)
-                    return true
-                }
-            }
-            MotionEvent.ACTION_MOVE -> {
-                if (active) {
-                    update(x, y)
-                    return true
-                }
-            }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                if (active) {
-                    active = false
-                    knobX = centerX
-                    knobY = centerY
-                    dx = 0f
-                    dy = 0f
-                    return true
-                }
-            }
-        }
-        return false
+    fun isInside(x: Float, y: Float): Boolean {
+        return dist(x, y, centerX, centerY) < radius * 1.6f
+    }
+
+    fun start(x: Float, y: Float) {
+        active = true
+        update(x, y)
+    }
+
+    fun move(x: Float, y: Float) {
+        if (active) update(x, y)
+    }
+
+    fun stop() {
+        active = false
+        knobX = centerX
+        knobY = centerY
+        dx = 0f
+        dy = 0f
     }
 
     private fun update(x: Float, y: Float) {

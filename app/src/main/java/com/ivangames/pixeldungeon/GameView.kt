@@ -32,11 +32,10 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     private var moveJoystick: Joystick? = null
     private var shootJoystick: Joystick? = null
 
-    // Пули игрока и врагов
+    // Пули
     private val bullets = mutableListOf<Bullet>()
     private val enemyBullets = mutableListOf<Bullet>()
 
-    // Кулдаун стрельбы
     private var lastShotTime = 0L
     private val shotCooldown = 220L
 
@@ -47,6 +46,11 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     private val enemies = mutableListOf<Enemy>()
 
     private var lastTime = 0L
+    private var lastPlayerHit = 0L
+
+    // Отдельные ID для пальцев на джойстиках
+    private var movePointerId = -1
+    private var shootPointerId = -1
 
     init {
         holder.addCallback(this)
@@ -86,7 +90,6 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         val cols = (width / tile).toInt()
         val rows = (height / tile).toInt()
 
-        // Только границы по краям — внутренних препятствий нет
         for (i in 0 until cols) {
             walls.add(Wall(i * tile, 0f, tile, tile))
             walls.add(Wall(i * tile, (rows - 1) * tile, tile, tile))
@@ -99,7 +102,6 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
 
     private fun spawnEnemies() {
         enemies.clear()
-        // Спавним 4 врага в правой половине, подальше от игрока
         enemies.add(Enemy(width * 0.65f, height * 0.3f))
         enemies.add(Enemy(width * 0.75f, height * 0.5f))
         enemies.add(Enemy(width * 0.65f, height * 0.7f))
@@ -180,10 +182,16 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         val newX = playerX + mj.dx * playerSpeed
         val newY = playerY + mj.dy * playerSpeed
 
-        if (!collidesWithWalls(newX, playerY)) playerX = newX
-        if (!collidesWithWalls(playerX, newY)) playerY = newY
+        // Проверяем стены
+        if (!collidesWithWalls(newX, playerY) && !collidesWithEnemies(newX, playerY)) {
+            playerX = newX
+        }
+        if (!collidesWithWalls(playerX, newY) && !collidesWithEnemies(playerX, newY)) {
+            playerY = newY
+        }
 
         pushOutOfWalls()
+        pushOutOfEnemies()
 
         if (playerX < playerSize / 2) playerX = playerSize / 2
         if (playerX > width - playerSize / 2) playerX = width - playerSize / 2
@@ -199,6 +207,21 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         val bottom = y + half
         for (w in walls) {
             if (right > w.x && left < w.x + w.w && bottom > w.y && top < w.y + w.h) return true
+        }
+        return false
+    }
+
+    private fun collidesWithEnemies(x: Float, y: Float): Boolean {
+        val half = playerSize / 2f
+        val left = x - half
+        val right = x + half
+        val top = y - half
+        val bottom = y + half
+        for (e in enemies) {
+            val ehalf = e.size / 2f
+            if (right > e.x - ehalf && left < e.x + ehalf && bottom > e.y - ehalf && top < e.y + ehalf) {
+                return true
+            }
         }
         return false
     }
@@ -229,14 +252,39 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         }
     }
 
+    private fun pushOutOfEnemies() {
+        val half = playerSize / 2f
+        for (e in enemies) {
+            val ehalf = e.size / 2f
+            val left = playerX - half
+            val right = playerX + half
+            val top = playerY - half
+            val bottom = playerY + half
+
+            if (right > e.x - ehalf && left < e.x + ehalf && bottom > e.y - ehalf && top < e.y + ehalf) {
+                val overlapLeft = right - (e.x - ehalf)
+                val overlapRight = (e.x + ehalf) - left
+                val overlapTop = bottom - (e.y - ehalf)
+                val overlapBottom = (e.y + ehalf) - top
+
+                val minOverlap = minOf(overlapLeft, overlapRight, overlapTop, overlapBottom)
+
+                when (minOverlap) {
+                    overlapLeft -> playerX = e.x - ehalf - half
+                    overlapRight -> playerX = e.x + ehalf + half
+                    overlapTop -> playerY = e.y - ehalf - half
+                    overlapBottom -> playerY = e.y + ehalf + half
+                }
+            }
+        }
+    }
+
     private fun updateShooting() {
         val sj = shootJoystick ?: return
         if (sj.dx == 0f && sj.dy == 0f) return
 
         val now = System.currentTimeMillis()
         if (now - lastShotTime < shotCooldown) return
-
-        // Проверяем ману
         if (playerMana <= 0) return
 
         lastShotTime = now
@@ -248,7 +296,6 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     }
 
     private fun updateBullets() {
-        // Пули игрока
         val it = bullets.iterator()
         while (it.hasNext()) {
             val b = it.next()
@@ -259,7 +306,6 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
                 continue
             }
 
-            // Стены
             var removed = false
             for (w in walls) {
                 if (b.x > w.x && b.x < w.x + w.w && b.y > w.y && b.y < w.y + w.h) {
@@ -270,7 +316,6 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
             }
             if (removed) continue
 
-            // Попадание во врага
             for (e in enemies) {
                 if (b.x > e.x - e.size / 2 && b.x < e.x + e.size / 2 &&
                     b.y > e.y - e.size / 2 && b.y < e.y + e.size / 2) {
@@ -281,7 +326,6 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
             }
         }
 
-        // Пули врагов
         val it2 = enemyBullets.iterator()
         while (it2.hasNext()) {
             val b = it2.next()
@@ -302,13 +346,11 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     }
 
     private fun updateEnemies() {
-        // Убираем мёртвых
         enemies.removeAll { it.hp <= 0 }
 
         for (e in enemies) {
             e.update(playerX, playerY, walls, enemies)
 
-            // Стрельба по игроку
             if (e.canShoot()) {
                 val dx = playerX - e.x
                 val dy = playerY - e.y
@@ -319,21 +361,8 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
                     enemyBullets.add(bullet)
                 }
             }
-
-            // Контакт с игроком — урон
-            val dx = playerX - e.x
-            val dy = playerY - e.y
-            val dist = Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
-            if (dist < (playerSize + e.size) / 2f) {
-                // Урон по игроку
-                if (System.currentTimeMillis() - lastPlayerHit > 800) {
-                    lastPlayerHit = System.currentTimeMillis()
-                    playerHp -= 1
-                }
-            }
         }
 
-        // Пули врагов — попадание в игрока
         val it = enemyBullets.iterator()
         while (it.hasNext()) {
             val b = it.next()
@@ -348,8 +377,6 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         }
     }
 
-    private var lastPlayerHit = 0L
-
     private fun drawFrame() {
         var canvas: Canvas? = null
         try {
@@ -363,7 +390,6 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     private fun drawGame(canvas: Canvas) {
         canvas.drawColor(Color.rgb(30, 30, 40))
 
-        // Сетка
         paint.color = Color.rgb(45, 45, 60)
         paint.strokeWidth = 2f
         var x = 0f
@@ -371,17 +397,12 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         var y = 0f
         while (y < height) { canvas.drawLine(0f, y, width.toFloat(), y, paint); y += 100f }
 
-        // Стены
         for (w in walls) w.draw(canvas, paint)
-
-        // Враги
         for (e in enemies) e.draw(canvas, paint)
 
-        // Пули
         for (b in bullets) b.draw(canvas, paint)
         for (b in enemyBullets) b.draw(canvas, paint)
 
-        // Игрок
         paint.color = Color.rgb(80, 200, 120)
         canvas.drawRect(
             playerX - playerSize / 2, playerY - playerSize / 2,
@@ -390,10 +411,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         paint.color = Color.WHITE
         canvas.drawCircle(playerX, playerY, 5f, paint)
 
-        // HUD
         drawHud(canvas)
-
-        // Джойстики
         moveJoystick?.draw(canvas)
         shootJoystick?.draw(canvas)
     }
@@ -403,7 +421,6 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         val heartSize = 40f
         val heartGap = 12f
 
-        // Сердечки (HP) — сверху слева
         for (i in 0 until playerMaxHp) {
             val hx = margin + i * (heartSize + heartGap)
             val hy = margin
@@ -415,38 +432,32 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
             drawHeart(canvas, hx, hy, heartSize)
         }
 
-        // Полоска маны — под сердечками
         val barX = margin
         val barY = margin + heartSize + 20f
         val barW = 300f
         val barH = 22f
 
-        // Фон
         paint.color = Color.rgb(20, 20, 50)
         val bgRect = RectF(barX, barY, barX + barW, barY + barH)
         canvas.drawRoundRect(bgRect, 8f, 8f, paint)
 
-        // Заполнение
         val manaPercent = playerMana.toFloat() / playerMaxMana.toFloat()
         paint.color = Color.rgb(70, 130, 240)
         val fillRect = RectF(barX, barY, barX + barW * manaPercent, barY + barH)
         canvas.drawRoundRect(fillRect, 8f, 8f, paint)
 
-        // Обводка
         paint.color = Color.rgb(120, 170, 255)
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = 3f
         canvas.drawRoundRect(bgRect, 8f, 8f, paint)
         paint.style = Paint.Style.FILL
 
-        // Текст
         paint.color = Color.WHITE
         paint.textSize = 26f
         canvas.drawText("$playerMana / $playerMaxMana", barX + barW + 20f, barY + barH - 4f, paint)
     }
 
     private fun drawHeart(canvas: Canvas, x: Float, y: Float, size: Float) {
-        // Рисуем сердце из двух кругов и треугольника
         val r = size / 4f
         canvas.drawCircle(x + r, y + r, r, paint)
         canvas.drawCircle(x + 3 * r, y + r, r, paint)
@@ -459,9 +470,65 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         canvas.drawPath(path, paint)
     }
 
+    // Мультитач — каждый палец ведёт свой джойстик
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        moveJoystick?.handleTouch(event)
-        shootJoystick?.handleTouch(event)
+        val action = event.actionMasked
+        val pointerIndex = event.actionIndex
+        val pointerId = event.getPointerId(pointerIndex)
+
+        when (action) {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                val x = event.getX(pointerIndex)
+                val y = event.getY(pointerIndex)
+
+                // Левый джойстик
+                val mj = moveJoystick
+                if (mj != null && movePointerId == -1 && mj.isInside(x, y)) {
+                    movePointerId = pointerId
+                    mj.start(x, y)
+                    return true
+                }
+
+                // Правый джойстик
+                val sj = shootJoystick
+                if (sj != null && shootPointerId == -1 && sj.isInside(x, y)) {
+                    shootPointerId = pointerId
+                    sj.start(x, y)
+                    return true
+                }
+            }
+
+            MotionEvent.ACTION_MOVE -> {
+                for (i in 0 until event.pointerCount) {
+                    val id = event.getPointerId(i)
+                    val x = event.getX(i)
+                    val y = event.getY(i)
+
+                    if (id == movePointerId) {
+                        moveJoystick?.move(x, y)
+                    } else if (id == shootPointerId) {
+                        shootJoystick?.move(x, y)
+                    }
+                }
+            }
+
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
+                if (pointerId == movePointerId) {
+                    moveJoystick?.stop()
+                    movePointerId = -1
+                } else if (pointerId == shootPointerId) {
+                    shootJoystick?.stop()
+                    shootPointerId = -1
+                }
+            }
+
+            MotionEvent.ACTION_CANCEL -> {
+                moveJoystick?.stop()
+                shootJoystick?.stop()
+                movePointerId = -1
+                shootPointerId = -1
+            }
+        }
         return true
     }
 }
