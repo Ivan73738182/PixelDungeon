@@ -35,11 +35,17 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     private var moveJoystick: Joystick? = null
     private var shootJoystick: Joystick? = null
 
-    // Кнопка смены оружия — координаты и размер
     private var swapBtnX = 0f
     private var swapBtnY = 0f
-    private var swapBtnR = 80f
-    private var swapPointerId = -1
+    private var swapBtnR = 70f
+
+    // Магазин — кнопки
+    private var shopBuyHealX = 0f
+    private var shopBuyHealY = 0f
+    private var shopBuyManaX = 0f
+    private var shopBuyManaY = 0f
+    private val shopBtnW = 220f
+    private val shopBtnH = 80f
 
     private val bullets = mutableListOf<Bullet>()
     private val enemyBullets = mutableListOf<Bullet>()
@@ -50,12 +56,11 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     private val pickups = mutableListOf<Pickup>()
     private val particles = mutableListOf<Particle>()
 
-    // Оружие
-    private val meleeWeapons = mutableListOf<Weapon>()  // ближний бой
-    private val rangedWeapons = mutableListOf<Weapon>() // дальний бой
+    private val meleeWeapons = mutableListOf<Weapon>()
+    private val rangedWeapons = mutableListOf<Weapon>()
     private var meleeIndex = 0
     private var rangedIndex = 0
-    private var isMeleeActive = false // true = ближнее, false = дальнее
+    private var isMeleeActive = false
 
     private val rooms = mutableListOf<Room>()
     private var currentRoomIndex = 0
@@ -63,6 +68,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
 
     private var roomCleared = false
     private var isTrainingRoom = false
+    private var isShopRoom = false
 
     private var gameState = GameState.PLAYING
     enum class GameState { PLAYING, GAME_OVER, VICTORY }
@@ -73,6 +79,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
 
     private var movePointerId = -1
     private var shootPointerId = -1
+    private var swapPointerId = -1
 
     private var roomLeft = 0f
     private var roomTop = 0f
@@ -89,18 +96,21 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
             moveJoystick = Joystick(width * 0.15f, height * 0.75f, Math.min(width, height) * 0.12f)
             shootJoystick = Joystick(width * 0.85f, height * 0.75f, Math.min(width, height) * 0.12f)
 
-            // Кнопка смены оружия — по центру внизу
             swapBtnX = width / 2f
             swapBtnY = height * 0.88f
             swapBtnR = 70f
 
-            // Стартовое оружие
+            shopBuyHealX = width / 2f - shopBtnW - 20f
+            shopBuyHealY = height / 2f
+            shopBuyManaX = width / 2f + 20f
+            shopBuyManaY = height / 2f
+
             meleeWeapons.clear()
-            meleeWeapons.add(Weapon.knife())    // нож всегда
+            meleeWeapons.add(Weapon.knife())
             meleeIndex = 0
 
             rangedWeapons.clear()
-            rangedWeapons.add(Weapon.pistol())  // пистолет стартовый
+            rangedWeapons.add(Weapon.pistol())
             rangedIndex = 0
 
             isMeleeActive = false
@@ -118,32 +128,27 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
 
     private fun generateLevel() {
         rooms.clear()
-        allDoors.clear()
 
-        // Комната 0 — БАЗА (тренировка с мишенями)
-        rooms.add(Room(0, 0, 5, isBase = true))
+        // 0 — База
+        rooms.add(Room(0, RoomKind.BASE, listOf(5), 0, size = 1))
 
-        // Остальные — боевые, 3-5 штук
-        val fightCount = 3 + (Math.random() * 3).toInt()
-        for (i in 1..fightCount) {
-            val isLast = (i == fightCount)
-            val enemyCount: Int
-            val enemyType: Int
-            if (isLast) {
-                enemyCount = 1
-                enemyType = 4 // босс
-            } else if (i == 1) {
-                enemyCount = 3; enemyType = 0
-            } else if (i == 2) {
-                enemyCount = 3; enemyType = 1
-            } else if (i == 3) {
-                enemyCount = 2; enemyType = 2
-            } else {
-                enemyCount = 3 + (Math.random() * 2).toInt()
-                enemyType = (Math.random() * 4).toInt()
-            }
-            rooms.add(Room(i, enemyCount, enemyType))
-        }
+        // 1 — Первая боевая (обычные)
+        rooms.add(Room(1, RoomKind.FIGHT, listOf(0), 3, size = 1))
+
+        // 2 — Сокровищница
+        rooms.add(Room(2, RoomKind.TREASURE, listOf(0), 2, size = 1))
+
+        // 3 — Магазин
+        rooms.add(Room(3, RoomKind.SHOP, listOf(), 0, size = 1))
+
+        // 4 — Микс
+        rooms.add(Room(4, RoomKind.MIXED, listOf(0, 1, 3), 2, size = 2))
+
+        // 5 — Большая с танками
+        rooms.add(Room(5, RoomKind.MIXED, listOf(2, 1), 2, size = 2))
+
+        // 6 — Босс
+        rooms.add(Room(6, RoomKind.BOSS, listOf(4), 1, size = 2))
     }
 
     private fun buildRoomWalls() {
@@ -159,11 +164,11 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
 
         val midRow = rows / 2
 
+        // Границы
         for (i in 0 until cols) {
             walls.add(Wall(i * tile, 0f, tile, tile))
             walls.add(Wall(i * tile, (rows - 1) * tile, tile, tile))
         }
-
         for (j in 0 until rows) {
             if (j != midRow) {
                 walls.add(Wall(0f, j * tile, tile, tile))
@@ -171,74 +176,160 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
             }
         }
 
+        // Двери
         allDoors.clear()
         val doorSize = tile
         val midY = midRow * tile
+        allDoors.add(Door(0f, midY, tile, doorSize, DoorSide.LEFT, -1))
+        allDoors.add(Door((cols - 1) * tile, midY, tile, doorSize, DoorSide.RIGHT, 1))
+    }
 
-        if (rooms.size >= 2) {
-            allDoors.add(Door(0f, midY, tile, doorSize, DoorSide.LEFT, -1))
-            allDoors.add(Door((cols - 1) * tile, midY, tile, doorSize, DoorSide.RIGHT, 1))
+    // Внутренние препятствия для конкретной комнаты
+    private fun buildRoomObstacles(room: Room, tile: Float, cols: Int, rows: Int) {
+        room.innerWalls.clear()
+
+        if (room.kind == RoomKind.BASE || room.kind == RoomKind.SHOP) return
+
+        if (room.size == 2) {
+            // Большая комната — колонны
+            val cx = width / 2f
+            val cy = height / 2f
+            room.innerWalls.add(Wall(cx - tile * 2, cy - tile, tile, tile))
+            room.innerWalls.add(Wall(cx + tile, cy - tile, tile, tile))
+            room.innerWalls.add(Wall(cx - tile * 2, cy, tile, tile))
+            room.innerWalls.add(Wall(cx + tile, cy, tile, tile))
+        }
+
+        if (room.kind == RoomKind.MIXED && room.size == 2) {
+            // Добавляем ниши
+            room.innerWalls.add(Wall(tile * 2, tile * 2, tile, tile))
+            room.innerWalls.add(Wall((cols - 3) * tile, tile * 2, tile, tile))
+        }
+
+        if (room.kind == RoomKind.FIGHT) {
+            // 2 одиночные колонны
+            room.innerWalls.add(Wall(width / 2f - tile / 2, height / 3f, tile, tile))
+            room.innerWalls.add(Wall(width / 2f - tile / 2, height * 2f / 3f, tile, tile))
         }
     }
 
-    private fun loadRoom(index: Int) {
-        currentRoomIndex = index
-        val room = rooms[index]
+    // Внутренние ловушки для сокровищницы
+    private fun buildRoomTraps(room: Room) {
+        room.traps.clear()
+        if (room.kind != RoomKind.TREASURE) return
 
-        enemies.clear()
-        targets.clear()
-        bullets.clear()
-        enemyBullets.clear()
-        pickups.clear()
-        particles.clear()
+        // 4-6 ловушек
+        val count = 4 + (Math.random() * 3).toInt()
+        for (i in 0 until count) {
+            val tx = width * (0.3f + Math.random().toFloat() * 0.5f)
+            val ty = height * (0.3f + Math.random().toFloat() * 0.4f)
+            val type = if (Math.random() < 0.7) TrapType.SPIKES else TrapType.PIT
+            room.traps.add(Trap(tx, ty, type))
+        }
+    }
+private fun loadRoom(index: Int) {
+    currentRoomIndex = index
+    val room = rooms[index]
 
-        roomCleared = false
-        isTrainingRoom = room.isBase
+    enemies.clear()
+    targets.clear()
+    bullets.clear()
+    enemyBullets.clear()
+    pickups.clear()
+    particles.clear()
 
-        playerX = roomLeft + playerSize + 40f
-        playerY = (roomTop + roomBottom) / 2f
+    roomCleared = false
+    isTrainingRoom = (room.kind == RoomKind.BASE)
+    isShopRoom = (room.kind == RoomKind.SHOP)
 
-        if (room.isBase) {
-            // База — мишени
+    playerX = roomLeft + playerSize + 40f
+    playerY = (roomTop + roomBottom) / 2f
+
+    val tile = 120f
+    val cols = (width / tile).toInt()
+    val rows = (height / tile).toInt()
+
+    buildRoomObstacles(room, tile, cols, rows)
+    buildRoomTraps(room)
+
+    // Загружаем стены + внутренние препятствия комнаты
+    walls.clear()
+    // Границы
+    for (i in 0 until cols) {
+        walls.add(Wall(i * tile, 0f, tile, tile))
+        walls.add(Wall(i * tile, (rows - 1) * tile, tile, tile))
+    }
+    val midRow = rows / 2
+    for (j in 0 until rows) {
+        if (j != midRow) {
+            walls.add(Wall(0f, j * tile, tile, tile))
+            walls.add(Wall((cols - 1) * tile, j * tile, tile, tile))
+        }
+    }
+    // Внутренние
+    walls.addAll(room.innerWalls)
+
+    when (room.kind) {
+        RoomKind.BASE -> {
+            // Мишени
             targets.add(Target(width * 0.55f, height * 0.3f))
             targets.add(Target(width * 0.75f, height * 0.5f))
             targets.add(Target(width * 0.55f, height * 0.7f))
             roomCleared = true
-        } else if (!room.cleared) {
-            val total = room.enemyCount
-            for (i in 0 until total) {
-                val ex: Float
-                val ey: Float
-                if (room.enemyType == 4) {
-                    ex = roomRight - 250f
-                    ey = (roomTop + roomBottom) / 2f
-                } else {
-                    ex = width * (0.5f + Math.random().toFloat() * 0.4f)
-                    ey = height * (0.2f + Math.random().toFloat() * 0.6f)
-                }
-                val type = when (room.enemyType) {
-                    0 -> EnemyType.NORMAL
-                    1 -> EnemyType.FAST
-                    2 -> EnemyType.TANK
-                    3 -> EnemyType.SHOOTER
-                    else -> EnemyType.BOSS
-                }
-                enemies.add(Enemy(ex, ey, type))
-            }
-        } else {
+        }
+        RoomKind.SHOP -> {
+            // Сундук в центре для вида, магазин через кнопки
             roomCleared = true
         }
+        else -> {
+            if (!room.cleared) {
+                // Спавним врагов
+                val totalPerType = room.enemyCountPerType
+                for (typeIdx in room.enemyTypes) {
+                    for (k in 0 until totalPerType) {
+                        val ex = width * (0.5f + Math.random().toFloat() * 0.4f)
+                        val ey = height * (0.2f + Math.random().toFloat() * 0.6f)
+                        val etype = when (typeIdx) {
+                            0 -> EnemyType.NORMAL
+                            1 -> EnemyType.FAST
+                            2 -> EnemyType.TANK
+                            3 -> EnemyType.SHOOTER
+                            else -> EnemyType.BOSS
+                        }
+                        enemies.add(Enemy(ex, ey, etype))
+                    }
+                }
 
-        updateDoorsLock()
-    }
-
-    private fun updateDoorsLock() {
-        val locked = enemies.isNotEmpty()
-        for (d in allDoors) {
-            d.isLocked = locked
-            d.isOpen = !locked
+                // Сундук в сокровищнице
+                if (room.kind == RoomKind.TREASURE && room.chest == null) {
+                    room.chest = Chest(width - 250f, height / 2f)
+                }
+            } else {
+                roomCleared = true
+                // Сундук если есть и не открыт — покажем
+            }
         }
     }
+
+    // Проверка: если врагов нет, но комната боевая — зачищена
+    if (room.kind != RoomKind.BASE && room.kind != RoomKind.SHOP) {
+        if (enemies.isEmpty()) {
+            roomCleared = true
+            room.cleared = true
+        }
+    }
+
+    updateDoorsLock()
+}
+
+private fun updateDoorsLock() {
+    val locked = enemies.isNotEmpty()
+    for (d in allDoors) {
+        d.isLocked = locked
+        d.isOpen = !locked
+    }
+}
+
 override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
 
 override fun surfaceDestroyed(holder: SurfaceHolder) {
@@ -282,8 +373,58 @@ private fun update(dt: Long) {
     updateEnemies()
     updatePickups()
     updateParticles()
+    checkTraps()
+    checkChest()
     checkRoomClear()
     checkDoorsTransition()
+}
+
+private fun checkTraps() {
+    val room = rooms[currentRoomIndex]
+    for (trap in room.traps) {
+        if (trap.type == TrapType.SPIKES) {
+            val dx = playerX - trap.x
+            val dy = playerY - trap.y
+            val dist = Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+            if (dist < (trap.size / 2 + playerSize / 2) && trap.canTrigger()) {
+                playerHp -= 1
+                spawnParticles(playerX, playerY, Color.rgb(255, 60, 60), 8)
+                if (playerHp <= 0) {
+                    playerHp = 0
+                    gameState = GameState.GAME_OVER
+                }
+            }
+        }
+        if (trap.type == TrapType.PIT) {
+            val dx = playerX - trap.x
+            val dy = playerY - trap.y
+            val dist = Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+            if (dist < (trap.size / 2) && trap.canTrigger()) {
+                // Телепорт в начало комнаты
+                playerX = roomLeft + playerSize + 40f
+                playerY = (roomTop + roomBottom) / 2f
+                spawnParticles(playerX, playerY, Color.rgb(120, 120, 220), 12)
+            }
+        }
+    }
+}
+
+private fun checkChest() {
+    val room = rooms[currentRoomIndex]
+    val chest = room.chest ?: return
+    if (chest.opened) return
+
+    val dx = playerX - chest.x
+    val dy = playerY - chest.y
+    val dist = Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+    if (dist < (chest.size / 2 + playerSize / 2)) {
+        chest.opened = true
+        // Лут из сундука
+        coins += 5
+        pickups.add(Pickup(chest.x + 60f, chest.y - 40f, PickupType.HEAL))
+        pickups.add(Pickup(chest.x + 60f, chest.y + 40f, PickupType.MANA))
+        spawnParticles(chest.x, chest.y, Color.rgb(255, 220, 80), 20)
+    }
 }
 
 private fun checkRoomClear() {
@@ -396,6 +537,22 @@ private fun addXp(amount: Int) {
     }
 }
 
+// === МАГАЗИН ===
+private fun buyHeal() {
+    if (coins >= 3 && playerHp < playerMaxHp) {
+        coins -= 3
+        playerHp += 1
+        spawnParticles(width / 2f, height / 2f, Color.rgb(255, 100, 100), 10)
+    }
+}
+
+private fun buyMana() {
+    if (coins >= 2 && playerMana < playerMaxMana) {
+        coins -= 2
+        playerMana = (playerMana + 50).coerceAtMost(playerMaxMana)
+        spawnParticles(width / 2f, height / 2f, Color.rgb(80, 140, 255), 10)
+    }
+}
 private fun updatePlayer() {
     val mj = moveJoystick ?: return
     val newX = playerX + mj.dx * playerSpeed
@@ -482,10 +639,8 @@ private fun pushOutOfEnemies() {
     }
 }
 
-// === СТРЕЛЬБА ===
 private fun updateShooting() {
-    if (isMeleeActive) return  // если активно ближнее — не стреляем
-
+    if (isMeleeActive) return
     val sj = shootJoystick ?: return
     if (sj.dx == 0f && sj.dy == 0f) return
     if (rangedWeapons.isEmpty()) return
@@ -493,20 +648,17 @@ private fun updateShooting() {
     val weapon = rangedWeapons[rangedIndex]
     if (!weapon.canShoot()) return
 
-    // Мана
     if (!isTrainingRoom) {
         if (playerMana <= 0) return
         playerMana -= 1
     }
 
-    // Спавним пули (одну или несколько для дробовика)
     if (weapon.bulletCount == 1) {
         val bullet = Bullet(playerX, playerY, sj.dx, sj.dy,
             speed = weapon.bulletSpeed, damage = weapon.damage)
         bullet.isEnemy = false
         bullets.add(bullet)
     } else {
-        // Веер
         val baseAngle = Math.atan2(sj.dy.toDouble(), sj.dx.toDouble())
         for (i in 0 until weapon.bulletCount) {
             val offset = (i - (weapon.bulletCount - 1) / 2.0) * weapon.spreadAngle
@@ -521,7 +673,6 @@ private fun updateShooting() {
     }
 }
 
-// === БЛИЖНИЙ БОЙ (НОЖ/МЕЧ) ===
 private fun updateMelee() {
     if (!isMeleeActive) return
     if (meleeWeapons.isEmpty()) return
@@ -530,7 +681,6 @@ private fun updateMelee() {
     val now = System.currentTimeMillis()
     if (now - lastMeleeAttack < weapon.cooldown) return
 
-    // Ищем врага близко (в радиусе 100px)
     val meleeRange = 100f
     var hitAny = false
     for (e in enemies) {
@@ -543,11 +693,9 @@ private fun updateMelee() {
             hitAny = true
         }
     }
-
-    if (hitAny) {
-        lastMeleeAttack = now
-    }
+    if (hitAny) lastMeleeAttack = now
 }
+
 private fun updateBullets() {
     val it = bullets.iterator()
     while (it.hasNext()) {
@@ -568,7 +716,7 @@ private fun updateBullets() {
         }
         if (removed) continue
 
-        // Попадание в мишень
+        // Мишени
         for (t in targets) {
             if (b.x > t.x - t.size / 2 && b.x < t.x + t.size / 2 &&
                 b.y > t.y - t.size / 2 && b.y < t.y + t.size / 2) {
@@ -581,7 +729,7 @@ private fun updateBullets() {
         }
         if (removed) continue
 
-        // Попадание в врага
+        // Враги
         for (e in enemies) {
             if (b.x > e.x - e.size / 2 && b.x < e.x + e.size / 2 &&
                 b.y > e.y - e.size / 2 && b.y < e.y + e.size / 2) {
@@ -668,7 +816,6 @@ private fun restartGame() {
     pickups.clear()
     particles.clear()
 
-    // Сброс оружия
     meleeWeapons.clear()
     meleeWeapons.add(Weapon.knife())
     meleeIndex = 0
@@ -682,7 +829,6 @@ private fun restartGame() {
     loadRoom(0)
     gameState = GameState.PLAYING
 }
-
 private fun drawFrame() {
     var canvas: Canvas? = null
     try {
@@ -704,12 +850,30 @@ private fun drawGame(canvas: Canvas) {
     while (y < height) { canvas.drawLine(0f, y, width.toFloat(), y, paint); y += 100f }
 
     for (w in walls) w.draw(canvas, paint)
+
+    // Двери
     for (d in allDoors) d.draw(canvas, paint)
+
+    // Ловушки текущей комнаты
+    for (t in rooms[currentRoomIndex].traps) t.draw(canvas, paint)
+
+    // Сундук
+    rooms[currentRoomIndex].chest?.draw(canvas, paint)
+
+    // Мишени
     for (t in targets) t.draw(canvas, paint)
+
+    // Лут
     for (p in pickups) p.draw(canvas, paint)
+
+    // Враги
     for (e in enemies) e.draw(canvas, paint)
+
+    // Пули
     for (b in bullets) b.draw(canvas, paint)
     for (b in enemyBullets) b.draw(canvas, paint)
+
+    // Частицы
     for (p in particles) p.draw(canvas, paint)
 
     // Игрок
@@ -721,7 +885,7 @@ private fun drawGame(canvas: Canvas) {
     paint.color = Color.WHITE
     canvas.drawCircle(playerX, playerY, 5f, paint)
 
-    // В тренировочной комнате — рамка вокруг базы
+    // Рамка для спец-комнат
     if (isTrainingRoom) {
         paint.color = Color.argb(150, 100, 200, 255)
         paint.style = Paint.Style.STROKE
@@ -729,16 +893,28 @@ private fun drawGame(canvas: Canvas) {
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
         paint.style = Paint.Style.FILL
     }
+    if (isShopRoom) {
+        paint.color = Color.argb(150, 255, 220, 100)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 4f
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+        paint.style = Paint.Style.FILL
+    }
 
     drawHud(canvas)
-    drawWeaponButton(canvas)
+
+    if (!isShopRoom) {
+        drawWeaponButton(canvas)
+    }
+
     moveJoystick?.draw(canvas)
     shootJoystick?.draw(canvas)
 
     if (gameState == GameState.GAME_OVER) drawGameOver(canvas)
     else if (gameState == GameState.VICTORY) drawVictory(canvas)
-    else if (roomCleared && currentRoomIndex < rooms.size - 1) drawRoomClearedHint(canvas)
     else if (isTrainingRoom) drawTrainingHint(canvas)
+    else if (isShopRoom) drawShop(canvas)
+    else if (roomCleared && currentRoomIndex < rooms.size - 1) drawRoomClearedHint(canvas)
 }
 
 private fun drawHud(canvas: Canvas) {
@@ -794,23 +970,32 @@ private fun drawHud(canvas: Canvas) {
 
     paint.textSize = 32f
     paint.color = Color.rgb(255, 220, 80)
-    canvas.drawText("💰 $coins", width - 260f, margin + 30f, paint)
+    canvas.drawText("💰 $coins", width - 280f, margin + 30f, paint)
     paint.color = Color.WHITE
 
-    val roomName = if (isTrainingRoom) "База" else "Комната ${currentRoomIndex + 1}/${rooms.size}"
-    canvas.drawText(roomName, width - 260f, margin + 70f, paint)
+    val room = rooms[currentRoomIndex]
+    val name = when (room.kind) {
+        RoomKind.BASE -> "База"
+        RoomKind.SHOP -> "Магазин"
+        RoomKind.TREASURE -> "Сокровищница"
+        RoomKind.BOSS -> "БОСС"
+        RoomKind.MIXED -> "Микс"
+        else -> "Комната ${currentRoomIndex + 1}/${rooms.size}"
+    }
+    canvas.drawText(name, width - 280f, margin + 70f, paint)
 
     paint.textSize = 22f
     paint.color = Color.rgb(200, 200, 200)
     if (isTrainingRoom) {
-        canvas.drawText("Тренировка", width - 260f, margin + 105f, paint)
+        canvas.drawText("Тренировка", width - 280f, margin + 105f, paint)
+    } else if (isShopRoom) {
+        canvas.drawText("Покупки", width - 280f, margin + 105f, paint)
     } else {
-        canvas.drawText("Врагов: ${enemies.size}", width - 260f, margin + 105f, paint)
+        canvas.drawText("Врагов: ${enemies.size}", width - 280f, margin + 105f, paint)
     }
 }
 
 private fun drawWeaponButton(canvas: Canvas) {
-    // Круглая кнопка смены оружия
     paint.color = Color.argb(180, 60, 60, 90)
     canvas.drawCircle(swapBtnX, swapBtnY, swapBtnR, paint)
     paint.color = Color.argb(220, 200, 200, 220)
@@ -819,7 +1004,6 @@ private fun drawWeaponButton(canvas: Canvas) {
     canvas.drawCircle(swapBtnX, swapBtnY, swapBtnR, paint)
     paint.style = Paint.Style.FILL
 
-    // Текст на кнопке — название текущего
     val weaponName: String
     if (isMeleeActive) {
         weaponName = if (meleeWeapons.isNotEmpty()) meleeWeapons[meleeIndex].getName() else "Нож"
@@ -827,40 +1011,88 @@ private fun drawWeaponButton(canvas: Canvas) {
         weaponName = if (rangedWeapons.isNotEmpty()) rangedWeapons[rangedIndex].getName() else "Пистолет"
     }
 
-    paint.color = Color.WHITE
-    paint.textSize = 22f
-    paint.textAlign = Paint.Align.CENTER
-
-    // Стрелки вверх/вниз для подсказки
     paint.textSize = 18f
     paint.color = Color.rgb(180, 220, 255)
+    paint.textAlign = Paint.Align.CENTER
     canvas.drawText("▲", swapBtnX, swapBtnY - swapBtnR + 24f, paint)
     canvas.drawText("▼", swapBtnX, swapBtnY + swapBtnR - 12f, paint)
 
     paint.textSize = 22f
     paint.color = Color.WHITE
     canvas.drawText(weaponName, swapBtnX, swapBtnY + 8f, paint)
-
     paint.textAlign = Paint.Align.LEFT
 }
-    private fun drawRoomClearedHint(canvas: Canvas) {
-        paint.color = Color.rgb(120, 220, 150)
-        paint.textSize = 40f
-        paint.textAlign = Paint.Align.CENTER
-        canvas.drawText("Комната зачищена! →", width / 2f, 100f, paint)
-        paint.textAlign = Paint.Align.LEFT
-    }
 
-    private fun drawTrainingHint(canvas: Canvas) {
-        paint.color = Color.rgb(120, 200, 255)
-        paint.textSize = 32f
-        paint.textAlign = Paint.Align.CENTER
-        canvas.drawText("Тренировка — мана не тратится", width / 2f, 60f, paint)
-        paint.textSize = 24f
-        canvas.drawText("→ Иди в правую дверь, когда готов", width / 2f, height - 40f, paint)
-        paint.textAlign = Paint.Align.LEFT
-    }
+private fun drawRoomClearedHint(canvas: Canvas) {
+    paint.color = Color.rgb(120, 220, 150)
+    paint.textSize = 40f
+    paint.textAlign = Paint.Align.CENTER
+    canvas.drawText("Комната зачищена! →", width / 2f, 100f, paint)
+    paint.textAlign = Paint.Align.LEFT
+}
 
+private fun drawTrainingHint(canvas: Canvas) {
+    paint.color = Color.rgb(120, 200, 255)
+    paint.textSize = 32f
+    paint.textAlign = Paint.Align.CENTER
+    canvas.drawText("Тренировка — мана не тратится", width / 2f, 60f, paint)
+    paint.textSize = 24f
+    canvas.drawText("→ Иди в правую дверь, когда готов", width / 2f, height - 40f, paint)
+    paint.textAlign = Paint.Align.LEFT
+}
+
+private fun drawShop(canvas: Canvas) {
+    // Заголовок
+    paint.color = Color.rgb(255, 220, 100)
+    paint.textSize = 60f
+    paint.textAlign = Paint.Align.CENTER
+    canvas.drawText("МАГАЗИН", width / 2f, 100f, paint)
+
+    paint.color = Color.WHITE
+    paint.textSize = 28f
+    canvas.drawText("Монет: $coins", width / 2f, 150f, paint)
+
+    // Кнопка аптечки
+    paint.color = Color.argb(200, 120, 40, 40)
+    canvas.drawRoundRect(RectF(shopBuyHealX, shopBuyHealY - shopBtnH / 2,
+        shopBuyHealX + shopBtnW, shopBuyHealY + shopBtnH / 2), 12f, 12f, paint)
+    paint.color = Color.rgb(230, 60, 80)
+    paint.style = Paint.Style.STROKE
+    paint.strokeWidth = 4f
+    canvas.drawRoundRect(RectF(shopBuyHealX, shopBuyHealY - shopBtnH / 2,
+        shopBuyHealX + shopBtnW, shopBuyHealY + shopBtnH / 2), 12f, 12f, paint)
+    paint.style = Paint.Style.FILL
+
+    paint.color = Color.WHITE
+    paint.textSize = 26f
+    paint.textAlign = Paint.Align.CENTER
+    canvas.drawText("+1 HP", shopBuyHealX + shopBtnW / 2, shopBuyHealY - 5f, paint)
+    paint.textSize = 20f
+    canvas.drawText("3 монеты", shopBuyHealX + shopBtnW / 2, shopBuyHealY + 25f, paint)
+
+    // Кнопка маны
+    paint.color = Color.argb(200, 40, 60, 120)
+    canvas.drawRoundRect(RectF(shopBuyManaX, shopBuyManaY - shopBtnH / 2,
+        shopBuyManaX + shopBtnW, shopBuyManaY + shopBtnH / 2), 12f, 12f, paint)
+    paint.color = Color.rgb(70, 130, 240)
+    paint.style = Paint.Style.STROKE
+    paint.strokeWidth = 4f
+    canvas.drawRoundRect(RectF(shopBuyManaX, shopBuyManaY - shopBtnH / 2,
+        shopBuyManaX + shopBtnW, shopBuyManaY + shopBtnH / 2), 12f, 12f, paint)
+    paint.style = Paint.Style.FILL
+
+    paint.color = Color.WHITE
+    paint.textSize = 26f
+    canvas.drawText("+50 маны", shopBuyManaX + shopBtnW / 2, shopBuyManaY - 5f, paint)
+    paint.textSize = 20f
+    canvas.drawText("2 монеты", shopBuyManaX + shopBtnW / 2, shopBuyManaY + 25f, paint)
+
+    // Подсказка
+    paint.textSize = 24f
+    paint.color = Color.rgb(200, 200, 200)
+    canvas.drawText("→ Иди дальше, когда готов", width / 2f, height - 40f, paint)
+    paint.textAlign = Paint.Align.LEFT
+}
     private fun drawGameOver(canvas: Canvas) {
         paint.color = Color.argb(180, 0, 0, 0)
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
@@ -917,15 +1149,9 @@ private fun drawWeaponButton(canvas: Canvas) {
 
     private fun swapWeapon() {
         if (isMeleeActive) {
-            // Переключение на дальнее — если есть
-            if (rangedWeapons.isNotEmpty()) {
-                isMeleeActive = false
-            }
+            if (rangedWeapons.isNotEmpty()) isMeleeActive = false
         } else {
-            // Переключение на ближнее — если есть
-            if (meleeWeapons.isNotEmpty()) {
-                isMeleeActive = true
-            }
+            if (meleeWeapons.isNotEmpty()) isMeleeActive = true
         }
     }
 
@@ -943,7 +1169,21 @@ private fun drawWeaponButton(canvas: Canvas) {
 
         when (action) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
-                // Проверка кнопки смены оружия
+                // Магазин — кнопки покупки
+                if (isShopRoom) {
+                    if (px > shopBuyHealX && px < shopBuyHealX + shopBtnW &&
+                        py > shopBuyHealY - shopBtnH / 2 && py < shopBuyHealY + shopBtnH / 2) {
+                        buyHeal()
+                        return true
+                    }
+                    if (px > shopBuyManaX && px < shopBuyManaX + shopBtnW &&
+                        py > shopBuyManaY - shopBtnH / 2 && py < shopBuyManaY + shopBtnH / 2) {
+                        buyMana()
+                        return true
+                    }
+                }
+
+                // Кнопка смены оружия
                 val btnDx = px - swapBtnX
                 val btnDy = py - swapBtnY
                 val btnDist = Math.sqrt((btnDx * btnDx + btnDy * btnDy).toDouble()).toFloat()
