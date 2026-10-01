@@ -140,48 +140,50 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     }
 
     // Строим стены вокруг комнаты и двери
-    private fun buildRoomWalls() {
-        walls.clear()
-        val tile = 120f
-        val cols = (width / tile).toInt()
-        val rows = (height / tile).toInt()
+private fun buildRoomWalls() {
+    walls.clear()
+    val tile = 120f
+    val cols = (width / tile).toInt()
+    val rows = (height / tile).toInt()
 
-        // Область комнаты — внутренняя часть
-        roomLeft = tile
-        roomTop = tile
-        roomRight = (cols - 1) * tile
-        roomBottom = (rows - 1) * tile
+    roomLeft = tile
+    roomTop = tile
+    roomRight = (cols - 1) * tile
+    roomBottom = (rows - 1) * tile
 
-        // Границы
-        for (i in 0 until cols) {
-            walls.add(Wall(i * tile, 0f, tile, tile))
-            walls.add(Wall(i * tile, (rows - 1) * tile, tile, tile))
-        }
-        for (j in 0 until rows) {
+    // Средние ячейки — где будут двери
+    val midCol = cols / 2
+    val midRow = rows / 2
+
+    // Верх и низ (без дверей)
+    for (i in 0 until cols) {
+        walls.add(Wall(i * tile, 0f, tile, tile))
+        walls.add(Wall(i * tile, (rows - 1) * tile, tile, tile))
+    }
+
+    // Левая и правая стены — пропускаем среднюю ячейку (дверь)
+    for (j in 0 until rows) {
+        if (j != midRow) {
             walls.add(Wall(0f, j * tile, tile, tile))
             walls.add(Wall((cols - 1) * tile, j * tile, tile, tile))
         }
-
-        // Двери — по 2-4 штуки в зависимости от числа комнат
-        allDoors.clear()
-        val doorSize = tile
-        val midY = height / 2f - doorSize / 2f
-        val midX = width / 2f - doorSize / 2f
-
-        // Левая дверь → предыдущая комната
-        if (rooms.size >= 2) {
-            allDoors.add(
-                Door(0f, midY, tile, doorSize, DoorSide.LEFT, -1)
-            )
-        }
-        // Правая дверь → следующая комната
-        if (rooms.size >= 2) {
-            allDoors.add(
-                Door(width - tile, midY, tile, doorSize, DoorSide.RIGHT, 1)
-            )
-        }
     }
 
+    // Двери
+    allDoors.clear()
+    val doorSize = tile
+    val midY = midRow * tile
+    val midX = midCol * tile
+
+    if (rooms.size >= 2) {
+        allDoors.add(Door(0f, midY, tile, doorSize, DoorSide.LEFT, -1))
+        allDoors.add(Door((cols - 1) * tile, midY, tile, doorSize, DoorSide.RIGHT, 1))
+    }
+
+    // Заглушки для переменных, чтобы не ругался компилятор
+    val _unusedMidX = midX
+}
+    }
     // Загружаем комнату по индексу
     private fun loadRoom(index: Int) {
         currentRoomIndex = index
@@ -303,28 +305,46 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         }
     }
 
-    private fun checkDoorsTransition() {
-        if (!roomCleared) return
-        for (d in allDoors) {
-            if (d.isOpen && d.contains(playerX, playerY)) {
-                var nextIndex = currentRoomIndex + d.targetRoomIndex
-                if (d.side == DoorSide.LEFT) nextIndex = currentRoomIndex - 1
-                if (d.side == DoorSide.RIGHT) nextIndex = currentRoomIndex + 1
+private fun checkDoorsTransition() {
+    if (!roomCleared) return
 
-                if (nextIndex in 0 until rooms.size) {
-                    loadRoom(nextIndex)
-                    // Смещаем игрока внутрь комнаты (чтобы не застрял в двери)
-                    if (d.side == DoorSide.LEFT) {
-                        playerX = roomLeft + playerSize + 40f
-                    } else if (d.side == DoorSide.RIGHT) {
+    for (d in allDoors) {
+        if (!d.isOpen) continue
+
+        // Проверяем, стоит ли игрок в двери (или очень близко)
+        val doorCenterX = d.x + d.w / 2f
+        val doorCenterY = d.y + d.h / 2f
+        val dx = playerX - doorCenterX
+        val dy = playerY - doorCenterY
+        val dist = Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+
+        if (dist < 80f) {
+            val nextIndex = when (d.side) {
+                DoorSide.LEFT -> currentRoomIndex - 1
+                DoorSide.RIGHT -> currentRoomIndex + 1
+                DoorSide.TOP -> currentRoomIndex
+                DoorSide.BOTTOM -> currentRoomIndex
+            }
+
+            if (nextIndex in 0 until rooms.size) {
+                loadRoom(nextIndex)
+                // Ставим игрока с нужной стороны
+                when (d.side) {
+                    DoorSide.LEFT -> {
                         playerX = roomRight - playerSize - 40f
+                        playerY = height / 2f
                     }
-                    return
+                    DoorSide.RIGHT -> {
+                        playerX = roomLeft + playerSize + 40f
+                        playerY = height / 2f
+                    }
+                    else -> {}
                 }
+                return
             }
         }
     }
-
+}
     private fun spawnParticles(x: Float, y: Float, color: Int, count: Int = 6) {
         for (i in 0 until count) {
             val angle = Math.random() * Math.PI * 2
