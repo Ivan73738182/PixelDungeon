@@ -16,54 +16,42 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
 
     private val paint = Paint().apply { isAntiAlias = true }
 
-    // Игрок
     private var playerX = 0f
     private var playerY = 0f
     private val playerSize = 60f
     private var playerSpeed = 8f
 
-    // HP и мана
     private var playerHp = 5
     private var playerMaxHp = 5
     private var playerMana = 100
     private val playerMaxMana = 100
 
-    // Опыт и уровень
     private var playerXp = 0
     private var playerLevel = 1
     private var xpToNextLevel = 30
 
-    // Счёт
     private var coins = 0
 
-    // Джойстики
     private var moveJoystick: Joystick? = null
     private var shootJoystick: Joystick? = null
 
-    // Пули
     private val bullets = mutableListOf<Bullet>()
     private val enemyBullets = mutableListOf<Bullet>()
 
     private var lastShotTime = 0L
     private val shotCooldown = 220L
 
-    // Стены
     private val walls = mutableListOf<Wall>()
-
-    // Враги, лут, частицы
     private val enemies = mutableListOf<Enemy>()
     private val pickups = mutableListOf<Pickup>()
     private val particles = mutableListOf<Particle>()
 
-    // Комнаты
     private val rooms = mutableListOf<Room>()
     private var currentRoomIndex = 0
     private val allDoors = mutableListOf<Door>()
 
-    // Ожидание между комнатами (пауза перед переходом)
     private var roomCleared = false
 
-    // Состояние игры
     private var gameState = GameState.PLAYING
     enum class GameState { PLAYING, GAME_OVER, VICTORY }
 
@@ -73,7 +61,6 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     private var movePointerId = -1
     private var shootPointerId = -1
 
-    // Размеры комнаты
     private var roomLeft = 0f
     private var roomTop = 0f
     private var roomRight = 0f
@@ -86,16 +73,8 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
 
     override fun surfaceCreated(holder: SurfaceHolder) {
         try {
-            moveJoystick = Joystick(
-                width * 0.15f,
-                height * 0.75f,
-                Math.min(width, height) * 0.12f
-            )
-            shootJoystick = Joystick(
-                width * 0.85f,
-                height * 0.75f,
-                Math.min(width, height) * 0.12f
-            )
+            moveJoystick = Joystick(width * 0.15f, height * 0.75f, Math.min(width, height) * 0.12f)
+            shootJoystick = Joystick(width * 0.85f, height * 0.75f, Math.min(width, height) * 0.12f)
 
             generateLevel()
             buildRoomWalls()
@@ -108,18 +87,15 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         }
     }
 
-    // Генерация 3-6 комнат разной сложности
     private fun generateLevel() {
         rooms.clear()
         allDoors.clear()
-
-        val roomCount = 3 + (Math.random() * 4).toInt() // 3..6
+        val roomCount = 3 + (Math.random() * 4).toInt()
         for (i in 0 until roomCount) {
             val isLast = (i == roomCount - 1)
             val enemyCount: Int
             val enemyType: Int
             if (isLast) {
-                // Последняя комната — босс
                 enemyCount = 1
                 enemyType = 4
             } else if (i == 0) {
@@ -139,57 +115,45 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         }
     }
 
-    // Строим стены вокруг комнаты и двери
-private fun buildRoomWalls() {
-    walls.clear()
-    val tile = 120f
-    val cols = (width / tile).toInt()
-    val rows = (height / tile).toInt()
+    private fun buildRoomWalls() {
+        walls.clear()
+        val tile = 120f
+        val cols = (width / tile).toInt()
+        val rows = (height / tile).toInt()
 
-    roomLeft = tile
-    roomTop = tile
-    roomRight = (cols - 1) * tile
-    roomBottom = (rows - 1) * tile
+        roomLeft = tile
+        roomTop = tile
+        roomRight = (cols - 1) * tile
+        roomBottom = (rows - 1) * tile
 
-    // Средние ячейки — где будут двери
-    val midCol = cols / 2
-    val midRow = rows / 2
+        val midRow = rows / 2
 
-    // Верх и низ (без дверей)
-    for (i in 0 until cols) {
-        walls.add(Wall(i * tile, 0f, tile, tile))
-        walls.add(Wall(i * tile, (rows - 1) * tile, tile, tile))
-    }
+        for (i in 0 until cols) {
+            walls.add(Wall(i * tile, 0f, tile, tile))
+            walls.add(Wall(i * tile, (rows - 1) * tile, tile, tile))
+        }
 
-    // Левая и правая стены — пропускаем среднюю ячейку (дверь)
-    for (j in 0 until rows) {
-        if (j != midRow) {
-            walls.add(Wall(0f, j * tile, tile, tile))
-            walls.add(Wall((cols - 1) * tile, j * tile, tile, tile))
+        for (j in 0 until rows) {
+            if (j != midRow) {
+                walls.add(Wall(0f, j * tile, tile, tile))
+                walls.add(Wall((cols - 1) * tile, j * tile, tile, tile))
+            }
+        }
+
+        allDoors.clear()
+        val doorSize = tile
+        val midY = midRow * tile
+
+        if (rooms.size >= 2) {
+            allDoors.add(Door(0f, midY, tile, doorSize, DoorSide.LEFT, -1))
+            allDoors.add(Door((cols - 1) * tile, midY, tile, doorSize, DoorSide.RIGHT, 1))
         }
     }
 
-    // Двери
-    allDoors.clear()
-    val doorSize = tile
-    val midY = midRow * tile
-    val midX = midCol * tile
-
-    if (rooms.size >= 2) {
-        allDoors.add(Door(0f, midY, tile, doorSize, DoorSide.LEFT, -1))
-        allDoors.add(Door((cols - 1) * tile, midY, tile, doorSize, DoorSide.RIGHT, 1))
-    }
-
-    // Заглушки для переменных, чтобы не ругался компилятор
-    val _unusedMidX = midX
-}
-    }
-    // Загружаем комнату по индексу
     private fun loadRoom(index: Int) {
         currentRoomIndex = index
         val room = rooms[index]
 
-        // Очистка
         enemies.clear()
         bullets.clear()
         enemyBullets.clear()
@@ -198,17 +162,14 @@ private fun buildRoomWalls() {
 
         roomCleared = false
 
-        // Игрок — с левой стороны, если пришли слева
         playerX = roomLeft + playerSize + 40f
         playerY = (roomTop + roomBottom) / 2f
 
-        // Спавн врагов в правой/центральной части
         val total = room.enemyCount
         for (i in 0 until total) {
             val ex: Float
             val ey: Float
             if (room.enemyType == 4) {
-                // Босс — в центре правой части
                 ex = roomRight - 250f
                 ey = (roomTop + roomBottom) / 2f
             } else {
@@ -225,7 +186,6 @@ private fun buildRoomWalls() {
             enemies.add(Enemy(ex, ey, type))
         }
 
-        // Двери: закрыты, пока враги живы
         updateDoorsLock()
     }
 
@@ -241,10 +201,7 @@ private fun buildRoomWalls() {
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         running = false
-        try {
-            thread?.join()
-        } catch (e: InterruptedException) {
-        }
+        try { thread?.join() } catch (e: InterruptedException) {}
     }
 
     fun resume() {
@@ -263,7 +220,6 @@ private fun buildRoomWalls() {
             val now = System.currentTimeMillis()
             val dt = if (lastTime == 0L) 0L else now - lastTime
             lastTime = now
-
             try {
                 update(dt)
                 drawFrame()
@@ -271,17 +227,12 @@ private fun buildRoomWalls() {
                 android.util.Log.e("PixelDungeon", "loop crash", e)
                 running = false
             }
-
-            try {
-                Thread.sleep(16)
-            } catch (e: InterruptedException) {
-            }
+            try { Thread.sleep(16) } catch (e: InterruptedException) {}
         }
     }
 
     private fun update(dt: Long) {
         if (gameState != GameState.PLAYING) return
-
         updatePlayer()
         updateShooting()
         updateBullets()
@@ -297,64 +248,45 @@ private fun buildRoomWalls() {
             roomCleared = true
             rooms[currentRoomIndex].cleared = true
             updateDoorsLock()
-
-            // Последняя комната — победа
             if (currentRoomIndex == rooms.size - 1) {
                 gameState = GameState.VICTORY
             }
         }
     }
 
-private fun checkDoorsTransition() {
-    if (!roomCleared) return
-
-    for (d in allDoors) {
-        if (!d.isOpen) continue
-
-        // Проверяем, стоит ли игрок в двери (или очень близко)
-        val doorCenterX = d.x + d.w / 2f
-        val doorCenterY = d.y + d.h / 2f
-        val dx = playerX - doorCenterX
-        val dy = playerY - doorCenterY
-        val dist = Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
-
-        if (dist < 80f) {
-            val nextIndex = when (d.side) {
-                DoorSide.LEFT -> currentRoomIndex - 1
-                DoorSide.RIGHT -> currentRoomIndex + 1
-                DoorSide.TOP -> currentRoomIndex
-                DoorSide.BOTTOM -> currentRoomIndex
-            }
-
-            if (nextIndex in 0 until rooms.size) {
-                loadRoom(nextIndex)
-                // Ставим игрока с нужной стороны
-                when (d.side) {
-                    DoorSide.LEFT -> {
-                        playerX = roomRight - playerSize - 40f
-                        playerY = height / 2f
-                    }
-                    DoorSide.RIGHT -> {
-                        playerX = roomLeft + playerSize + 40f
-                        playerY = height / 2f
-                    }
-                    else -> {}
+    private fun checkDoorsTransition() {
+        if (!roomCleared) return
+        for (d in allDoors) {
+            if (!d.isOpen) continue
+            val doorCenterX = d.x + d.w / 2f
+            val doorCenterY = d.y + d.h / 2f
+            val dx = playerX - doorCenterX
+            val dy = playerY - doorCenterY
+            val dist = Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+            if (dist < 80f) {
+                val nextIndex = when (d.side) {
+                    DoorSide.LEFT -> currentRoomIndex - 1
+                    DoorSide.RIGHT -> currentRoomIndex + 1
+                    else -> currentRoomIndex
                 }
-                return
+                if (nextIndex in 0 until rooms.size) {
+                    loadRoom(nextIndex)
+                    when (d.side) {
+                        DoorSide.LEFT -> { playerX = roomRight - playerSize - 40f; playerY = height / 2f }
+                        DoorSide.RIGHT -> { playerX = roomLeft + playerSize + 40f; playerY = height / 2f }
+                        else -> {}
+                    }
+                    return
+                }
             }
         }
     }
-}
+
     private fun spawnParticles(x: Float, y: Float, color: Int, count: Int = 6) {
         for (i in 0 until count) {
             val angle = Math.random() * Math.PI * 2
             val sp = 2f + Math.random().toFloat() * 3f
-            particles.add(Particle(
-                x, y,
-                Math.cos(angle).toFloat() * sp,
-                Math.sin(angle).toFloat() * sp,
-                color
-            ))
+            particles.add(Particle(x, y, Math.cos(angle).toFloat() * sp, Math.sin(angle).toFloat() * sp, color))
         }
     }
 
@@ -369,7 +301,6 @@ private fun checkDoorsTransition() {
 
     private fun updatePickups() {
         for (p in pickups) p.update()
-
         val it = pickups.iterator()
         while (it.hasNext()) {
             val p = it.next()
@@ -412,20 +343,12 @@ private fun checkDoorsTransition() {
     }
 private fun updatePlayer() {
     val mj = moveJoystick ?: return
-
     val newX = playerX + mj.dx * playerSpeed
     val newY = playerY + mj.dy * playerSpeed
-
-    if (!collidesWithWalls(newX, playerY) && !collidesWithEnemies(newX, playerY)) {
-        playerX = newX
-    }
-    if (!collidesWithWalls(playerX, newY) && !collidesWithEnemies(playerX, newY)) {
-        playerY = newY
-    }
-
+    if (!collidesWithWalls(newX, playerY) && !collidesWithEnemies(newX, playerY)) playerX = newX
+    if (!collidesWithWalls(playerX, newY) && !collidesWithEnemies(playerX, newY)) playerY = newY
     pushOutOfWalls()
     pushOutOfEnemies()
-
     if (playerX < playerSize / 2) playerX = playerSize / 2
     if (playerX > width - playerSize / 2) playerX = width - playerSize / 2
     if (playerY < playerSize / 2) playerY = playerSize / 2
@@ -452,9 +375,7 @@ private fun collidesWithEnemies(x: Float, y: Float): Boolean {
     val bottom = y + half
     for (e in enemies) {
         val ehalf = e.size / 2f
-        if (right > e.x - ehalf && left < e.x + ehalf && bottom > e.y - ehalf && top < e.y + ehalf) {
-            return true
-        }
+        if (right > e.x - ehalf && left < e.x + ehalf && bottom > e.y - ehalf && top < e.y + ehalf) return true
     }
     return false
 }
@@ -466,18 +387,17 @@ private fun pushOutOfWalls() {
         val right = playerX + half
         val top = playerY - half
         val bottom = playerY + half
-
         if (right > w.x && left < w.x + w.w && bottom > w.y && top < w.y + w.h) {
-            val overlapLeft = right - w.x
-            val overlapRight = (w.x + w.w) - left
-            val overlapTop = bottom - w.y
-            val overlapBottom = (w.y + w.h) - top
-            val minOverlap = minOf(overlapLeft, overlapRight, overlapTop, overlapBottom)
-            when (minOverlap) {
-                overlapLeft -> playerX = w.x - half
-                overlapRight -> playerX = w.x + w.w + half
-                overlapTop -> playerY = w.y - half
-                overlapBottom -> playerY = w.y + w.h + half
+            val oL = right - w.x
+            val oR = (w.x + w.w) - left
+            val oT = bottom - w.y
+            val oB = (w.y + w.h) - top
+            val minO = minOf(oL, oR, oT, oB)
+            when (minO) {
+                oL -> playerX = w.x - half
+                oR -> playerX = w.x + w.w + half
+                oT -> playerY = w.y - half
+                oB -> playerY = w.y + w.h + half
             }
         }
     }
@@ -491,18 +411,17 @@ private fun pushOutOfEnemies() {
         val right = playerX + half
         val top = playerY - half
         val bottom = playerY + half
-
         if (right > e.x - ehalf && left < e.x + ehalf && bottom > e.y - ehalf && top < e.y + ehalf) {
-            val overlapLeft = right - (e.x - ehalf)
-            val overlapRight = (e.x + ehalf) - left
-            val overlapTop = bottom - (e.y - ehalf)
-            val overlapBottom = (e.y + ehalf) - top
-            val minOverlap = minOf(overlapLeft, overlapRight, overlapTop, overlapBottom)
-            when (minOverlap) {
-                overlapLeft -> playerX = e.x - ehalf - half
-                overlapRight -> playerX = e.x + ehalf + half
-                overlapTop -> playerY = e.y - ehalf - half
-                overlapBottom -> playerY = e.y + ehalf + half
+            val oL = right - (e.x - ehalf)
+            val oR = (e.x + ehalf) - left
+            val oT = bottom - (e.y - ehalf)
+            val oB = (e.y + ehalf) - top
+            val minO = minOf(oL, oR, oT, oB)
+            when (minO) {
+                oL -> playerX = e.x - ehalf - half
+                oR -> playerX = e.x + ehalf + half
+                oT -> playerY = e.y - ehalf - half
+                oB -> playerY = e.y + ehalf + half
             }
         }
     }
@@ -511,14 +430,11 @@ private fun pushOutOfEnemies() {
 private fun updateShooting() {
     val sj = shootJoystick ?: return
     if (sj.dx == 0f && sj.dy == 0f) return
-
     val now = System.currentTimeMillis()
     if (now - lastShotTime < shotCooldown) return
     if (playerMana <= 0) return
-
     lastShotTime = now
     playerMana -= 1
-
     val bullet = Bullet(playerX, playerY, sj.dx, sj.dy, speed = 18f)
     bullet.isEnemy = false
     bullets.add(bullet)
@@ -529,12 +445,10 @@ private fun updateBullets() {
     while (it.hasNext()) {
         val b = it.next()
         b.update()
-
         if (b.x < 0 || b.x > width || b.y < 0 || b.y > height) {
             it.remove()
             continue
         }
-
         var removed = false
         for (w in walls) {
             if (b.x > w.x && b.x < w.x + w.w && b.y > w.y && b.y < w.y + w.h) {
@@ -545,7 +459,6 @@ private fun updateBullets() {
             }
         }
         if (removed) continue
-
         for (e in enemies) {
             if (b.x > e.x - e.size / 2 && b.x < e.x + e.size / 2 &&
                 b.y > e.y - e.size / 2 && b.y < e.y + e.size / 2) {
@@ -556,17 +469,14 @@ private fun updateBullets() {
             }
         }
     }
-
     val it2 = enemyBullets.iterator()
     while (it2.hasNext()) {
         val b = it2.next()
         b.update()
-
         if (b.x < 0 || b.x > width || b.y < 0 || b.y > height) {
             it2.remove()
             continue
         }
-
         for (w in walls) {
             if (b.x > w.x && b.x < w.x + w.w && b.y > w.y && b.y < w.y + w.h) {
                 it2.remove()
@@ -587,11 +497,9 @@ private fun updateEnemies() {
 
     for (e in enemies) {
         e.update(playerX, playerY, walls, enemies, bullets)
-
         val dx = playerX - e.x
         val dy = playerY - e.y
         val dist = Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
-
         if (dist < e.preferredDistance + 80f && e.canShoot()) {
             val len = if (dist < 1f) 1f else dist
             val bullet = Bullet(e.x, e.y, dx / len, dy / len, speed = 10f)
@@ -628,17 +536,14 @@ private fun restartGame() {
     coins = 0
     playerSpeed = 8f
     playerMaxHp = 5
-
     bullets.clear()
     enemyBullets.clear()
     enemies.clear()
     pickups.clear()
     particles.clear()
-
     generateLevel()
     buildRoomWalls()
     loadRoom(0)
-
     gameState = GameState.PLAYING
 }
 
@@ -655,7 +560,6 @@ private fun drawFrame() {
 private fun drawGame(canvas: Canvas) {
     canvas.drawColor(Color.rgb(30, 30, 40))
 
-    // Сетка
     paint.color = Color.rgb(45, 45, 60)
     paint.strokeWidth = 2f
     var x = 0f
@@ -663,26 +567,14 @@ private fun drawGame(canvas: Canvas) {
     var y = 0f
     while (y < height) { canvas.drawLine(0f, y, width.toFloat(), y, paint); y += 100f }
 
-    // Стены
     for (w in walls) w.draw(canvas, paint)
-
-    // Двери
     for (d in allDoors) d.draw(canvas, paint)
-
-    // Лут
     for (p in pickups) p.draw(canvas, paint)
-
-    // Враги
     for (e in enemies) e.draw(canvas, paint)
-
-    // Пули
     for (b in bullets) b.draw(canvas, paint)
     for (b in enemyBullets) b.draw(canvas, paint)
-
-    // Частицы
     for (p in particles) p.draw(canvas, paint)
 
-    // Игрок
     paint.color = Color.rgb(80, 200, 120)
     canvas.drawRect(
         playerX - playerSize / 2, playerY - playerSize / 2,
@@ -691,21 +583,13 @@ private fun drawGame(canvas: Canvas) {
     paint.color = Color.WHITE
     canvas.drawCircle(playerX, playerY, 5f, paint)
 
-    // HUD
     drawHud(canvas)
-
-    // Джойстики
     moveJoystick?.draw(canvas)
     shootJoystick?.draw(canvas)
 
-    // Экраны
-    if (gameState == GameState.GAME_OVER) {
-        drawGameOver(canvas)
-    } else if (gameState == GameState.VICTORY) {
-        drawVictory(canvas)
-    } else if (roomCleared && currentRoomIndex < rooms.size - 1) {
-        drawRoomClearedHint(canvas)
-    }
+    if (gameState == GameState.GAME_OVER) drawGameOver(canvas)
+    else if (gameState == GameState.VICTORY) drawVictory(canvas)
+    else if (roomCleared && currentRoomIndex < rooms.size - 1) drawRoomClearedHint(canvas)
 }
 
 private fun drawHud(canvas: Canvas) {
@@ -759,86 +643,80 @@ private fun drawHud(canvas: Canvas) {
     paint.textSize = 20f
     canvas.drawText("LVL $playerLevel", barX + barW + 20f, xpY + 12f, paint)
 
-    // Справа: комната, монеты, врагов
     paint.textSize = 32f
     paint.color = Color.rgb(255, 220, 80)
     canvas.drawText("💰 $coins", width - 220f, margin + 30f, paint)
     paint.color = Color.WHITE
     canvas.drawText("Комната ${currentRoomIndex + 1}/${rooms.size}", width - 220f, margin + 70f, paint)
-
     paint.textSize = 22f
     paint.color = Color.rgb(200, 200, 200)
     canvas.drawText("Врагов: ${enemies.size}", width - 220f, margin + 105f, paint)
 }
+    private fun drawRoomClearedHint(canvas: Canvas) {
+        paint.color = Color.rgb(120, 220, 150)
+        paint.textSize = 40f
+        paint.textAlign = Paint.Align.CENTER
+        canvas.drawText("Комната зачищена! →", width / 2f, 100f, paint)
+        paint.textAlign = Paint.Align.LEFT
+    }
 
-private fun drawRoomClearedHint(canvas: Canvas) {
-    paint.color = Color.rgb(120, 220, 150)
-    paint.textSize = 40f
-    paint.textAlign = Paint.Align.CENTER
-    canvas.drawText("Комната зачищена! →", width / 2f, 100f, paint)
-    paint.textAlign = Paint.Align.LEFT
-}
+    private fun drawGameOver(canvas: Canvas) {
+        paint.color = Color.argb(180, 0, 0, 0)
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
 
-private fun drawGameOver(canvas: Canvas) {
-    paint.color = Color.argb(180, 0, 0, 0)
-    canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+        paint.color = Color.rgb(230, 60, 80)
+        paint.textSize = 80f
+        paint.textAlign = Paint.Align.CENTER
+        canvas.drawText("GAME OVER", width / 2f, height / 2f - 40f, paint)
 
-    paint.color = Color.rgb(230, 60, 80)
-    paint.textSize = 80f
-    paint.textAlign = Paint.Align.CENTER
-    canvas.drawText("GAME OVER", width / 2f, height / 2f - 40f, paint)
+        paint.color = Color.WHITE
+        paint.textSize = 36f
+        canvas.drawText("Монеты: $coins", width / 2f, height / 2f + 30f, paint)
+        canvas.drawText("Комната: ${currentRoomIndex + 1}/${rooms.size}", width / 2f, height / 2f + 80f, paint)
+        canvas.drawText("Уровень: $playerLevel", width / 2f, height / 2f + 130f, paint)
 
-    paint.color = Color.WHITE
-    paint.textSize = 36f
-    canvas.drawText("Монеты: $coins", width / 2f, height / 2f + 30f, paint)
-    canvas.drawText("Комната: ${currentRoomIndex + 1}/${rooms.size}", width / 2f, height / 2f + 80f, paint)
-    canvas.drawText("Уровень: $playerLevel", width / 2f, height / 2f + 130f, paint)
+        paint.textSize = 30f
+        paint.color = Color.rgb(120, 220, 150)
+        canvas.drawText("Нажми на экран для рестарта", width / 2f, height / 2f + 210f, paint)
+        paint.textAlign = Paint.Align.LEFT
+    }
 
-    paint.textSize = 30f
-    paint.color = Color.rgb(120, 220, 150)
-    canvas.drawText("Нажми на экран для рестарта", width / 2f, height / 2f + 210f, paint)
-    paint.textAlign = Paint.Align.LEFT
-}
+    private fun drawVictory(canvas: Canvas) {
+        paint.color = Color.argb(180, 0, 0, 20)
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
 
-private fun drawVictory(canvas: Canvas) {
-    paint.color = Color.argb(180, 0, 0, 20)
-    canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+        paint.color = Color.rgb(255, 220, 80)
+        paint.textSize = 90f
+        paint.textAlign = Paint.Align.CENTER
+        canvas.drawText("ПОБЕДА!", width / 2f, height / 2f - 60f, paint)
 
-    paint.color = Color.rgb(255, 220, 80)
-    paint.textSize = 90f
-    paint.textAlign = Paint.Align.CENTER
-    canvas.drawText("ПОБЕДА!", width / 2f, height / 2f - 60f, paint)
+        paint.color = Color.WHITE
+        paint.textSize = 36f
+        canvas.drawText("Все комнаты пройдены!", width / 2f, height / 2f + 10f, paint)
+        canvas.drawText("Монеты: $coins", width / 2f, height / 2f + 60f, paint)
+        canvas.drawText("Уровень: $playerLevel", width / 2f, height / 2f + 110f, paint)
 
-    paint.color = Color.WHITE
-    paint.textSize = 36f
-    canvas.drawText("Все комнаты пройдены!", width / 2f, height / 2f + 10f, paint)
-    canvas.drawText("Монеты: $coins", width / 2f, height / 2f + 60f, paint)
-    canvas.drawText("Уровень: $playerLevel", width / 2f, height / 2f + 110f, paint)
+        paint.textSize = 30f
+        paint.color = Color.rgb(120, 220, 150)
+        canvas.drawText("Нажми для новой игры", width / 2f, height / 2f + 200f, paint)
+        paint.textAlign = Paint.Align.LEFT
+    }
 
-    paint.textSize = 30f
-    paint.color = Color.rgb(120, 220, 150)
-    canvas.drawText("Нажми для новой игры", width / 2f, height / 2f + 200f, paint)
-    paint.textAlign = Paint.Align.LEFT
-}
+    private fun drawHeart(canvas: Canvas, x: Float, y: Float, size: Float) {
+        val r = size / 4f
+        canvas.drawCircle(x + r, y + r, r, paint)
+        canvas.drawCircle(x + 3 * r, y + r, r, paint)
+        val path = android.graphics.Path()
+        path.moveTo(x, y + r)
+        path.lineTo(x + size, y + r)
+        path.lineTo(x + size / 2, y + size)
+        path.close()
+        canvas.drawPath(path, paint)
+    }
 
-private fun drawHeart(canvas: Canvas, x: Float, y: Float, size: Float) {
-    val r = size / 4f
-    canvas.drawCircle(x + r, y + r, r, paint)
-    canvas.drawCircle(x + 3 * r, y + r, r, paint)
-
-    val path = android.graphics.Path()
-    path.moveTo(x, y + r)
-    path.lineTo(x + size, y + r)
-    path.lineTo(x + size / 2, y + size)
-    path.close()
-    canvas.drawPath(path, paint)
-}
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        // Рестарт после смерти или победы — любой тап
         if (gameState == GameState.GAME_OVER || gameState == GameState.VICTORY) {
-            if (event.actionMasked == MotionEvent.ACTION_DOWN) {
-                restartGame()
-            }
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) restartGame()
             return true
         }
 
@@ -850,14 +728,12 @@ private fun drawHeart(canvas: Canvas, x: Float, y: Float, size: Float) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 val x = event.getX(pointerIndex)
                 val y = event.getY(pointerIndex)
-
                 val mj = moveJoystick
                 if (mj != null && movePointerId == -1 && mj.isInside(x, y)) {
                     movePointerId = pointerId
                     mj.start(x, y)
                     return true
                 }
-
                 val sj = shootJoystick
                 if (sj != null && shootPointerId == -1 && sj.isInside(x, y)) {
                     shootPointerId = pointerId
@@ -865,21 +741,15 @@ private fun drawHeart(canvas: Canvas, x: Float, y: Float, size: Float) {
                     return true
                 }
             }
-
             MotionEvent.ACTION_MOVE -> {
                 for (i in 0 until event.pointerCount) {
                     val id = event.getPointerId(i)
                     val x = event.getX(i)
                     val y = event.getY(i)
-
-                    if (id == movePointerId) {
-                        moveJoystick?.move(x, y)
-                    } else if (id == shootPointerId) {
-                        shootJoystick?.move(x, y)
-                    }
+                    if (id == movePointerId) moveJoystick?.move(x, y)
+                    else if (id == shootPointerId) shootJoystick?.move(x, y)
                 }
             }
-
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
                 if (pointerId == movePointerId) {
                     moveJoystick?.stop()
@@ -889,7 +759,6 @@ private fun drawHeart(canvas: Canvas, x: Float, y: Float, size: Float) {
                     shootPointerId = -1
                 }
             }
-
             MotionEvent.ACTION_CANCEL -> {
                 moveJoystick?.stop()
                 shootJoystick?.stop()
