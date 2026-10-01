@@ -13,16 +13,33 @@ class Enemy(
     val maxHp = 3
     var speed = 2.2f
 
-    // Дистанция, на которой враг останавливается и стреляет
+    // Дистанция ведения боя
     val preferredDistance = 280f
+    val distanceTolerance = 60f
 
-    // Допустимое отклонение от дистанции (чтобы не дёргался)
-    val distanceTolerance = 40f
-
+    // Стрельба медленнее
     var shootTimer = 0L
-    val shootInterval = 1500L
+    var shootInterval = 2500L
 
-    fun update(playerX: Float, playerY: Float, walls: List<Wall>, enemies: List<Enemy>) {
+    // Стейф (движение вбок)
+    private var strafeDir = if (Math.random() < 0.5) -1f else 1f
+    private var strafeTimer = 0L
+    private val strafeDuration = 1500L
+
+    // Уворот
+    private var dodgeTimer = 0L
+    private var dodgeDirX = 0f
+    private var dodgeDirY = 0f
+    private val dodgeDuration = 400L
+    private var lastDodgeCheck = 0L
+
+    fun update(
+        playerX: Float,
+        playerY: Float,
+        walls: List<Wall>,
+        enemies: List<Enemy>,
+        bullets: List<Bullet>
+    ) {
         val dx = playerX - x
         val dy = playerY - y
         val len = Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
@@ -31,40 +48,80 @@ class Enemy(
         val nx = dx / len
         val ny = dy / len
 
-        // Если ближе "идеальной" дистанции — отходим назад
-        // Если дальше — идём вперёд
-        // Если в зоне tolerance — стоим
-        val moveDir: Float
-        if (len < preferredDistance - distanceTolerance) {
-            // Слишком близко — отходим
-            moveDir = -1f
-        } else if (len > preferredDistance + distanceTolerance) {
-            // Слишком далеко — идём вперёд
-            moveDir = 1f
-        } else {
-            // В идеальной зоне — стоим
-            return
-        }
+        val now = System.currentTimeMillis()
 
-        val stepX = nx * speed * moveDir
-        val stepY = ny * speed * moveDir
-
-        // По X
-        if (!collidesWalls(x + stepX, y, walls) && !collidesEnemies(x + stepX, y, enemies)) {
-            x += stepX
-        } else {
-            // Если не можем двигаться по X — пробуем скользить по Y
-            if (!collidesWalls(x, y + stepY, walls) && !collidesEnemies(x, y + stepY, enemies)) {
-                y += stepY
+        // === УВОРОТ ОТ ПУЛЬ ===
+        if (now - dodgeTimer > dodgeDuration) {
+            // Проверяем пули игрока рядом
+            for (b in bullets) {
+                if (b.isEnemy) continue
+                val bdx = b.x - x
+                val bdy = b.y - y
+                val blen = Math.sqrt((bdx * bdx + bdy * bdy).toDouble()).toFloat()
+                // Пуля близко и летит примерно в нашу сторону
+                if (blen < 200f) {
+                    val dot = (b.dx * bdx + b.dy * bdy) / (blen + 0.01f)
+                    if (dot > 0.5f) {
+                        // Уворачиваемся перпендикулярно направлению пули
+                        dodgeDirX = -b.dy
+                        dodgeDirY = b.dx
+                        // Случайно выбираем сторону
+                        if (Math.random() < 0.5) {
+                            dodgeDirX = -dodgeDirX
+                            dodgeDirY = -dodgeDirY
+                        }
+                        dodgeTimer = now
+                        break
+                    }
+                }
             }
         }
-        // По Y
-        if (!collidesWalls(x, y + stepY, walls) && !collidesEnemies(x, y + stepY, enemies)) {
-            y += stepY
+
+        val moveX: Float
+        val moveY: Float
+
+        if (now - dodgeTimer < dodgeDuration) {
+            // Активный уворот
+            moveX = dodgeDirX * speed * 1.6f
+            moveY = dodgeDirY * speed * 1.6f
         } else {
-            if (!collidesWalls(x + stepX, y, walls) && !collidesEnemies(x + stepX, y, enemies)) {
-                x += stepX
+            // Обычное поведение: держим дистанцию + стрейф
+            val distStepX: Float
+            val distStepY: Float
+
+            if (len < preferredDistance - distanceTolerance) {
+                distStepX = -nx * speed
+                distStepY = -ny * speed
+            } else if (len > preferredDistance + distanceTolerance) {
+                distStepX = nx * speed
+                distStepY = ny * speed
+            } else {
+                distStepX = 0f
+                distStepY = 0f
             }
+
+            // Меняем направление стрейфа время от времени
+            if (now - strafeTimer > strafeDuration) {
+                strafeTimer = now
+                strafeDir = -strafeDir
+            }
+
+            // Стрейф — движение перпендикулярно игроку
+            val strafeX = -ny * speed * 0.6f * strafeDir
+            val strafeY = nx * speed * 0.6f * strafeDir
+
+            moveX = distStepX + strafeX
+            moveY = distStepY + strafeY
+        }
+
+        // Пробуем сдвинуться, учитывая стены и других врагов
+        val tryX = x + moveX
+        val tryY = y + moveY
+
+        if (!collidesWalls(tryX, y, walls) && !collidesEnemies(tryX, y, enemies)) {
+            x = tryX
+        } else if (!collidesWalls(x, tryY, walls) && !collidesEnemies(x, tryY, enemies)) {
+            y = tryY
         }
     }
 

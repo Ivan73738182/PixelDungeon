@@ -48,7 +48,6 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     private var lastTime = 0L
     private var lastPlayerHit = 0L
 
-    // ID пальцев
     private var movePointerId = -1
     private var shootPointerId = -1
 
@@ -347,9 +346,8 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         enemies.removeAll { it.hp <= 0 }
 
         for (e in enemies) {
-            e.update(playerX, playerY, walls, enemies)
+            e.update(playerX, playerY, walls, enemies, bullets)
 
-            // Стрельба только если враг на "рабочей" дистанции
             val dx = playerX - e.x
             val dy = playerY - e.y
             val dist = Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
@@ -362,7 +360,6 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
             }
         }
 
-        // Пули врагов — попадание в игрока
         val it = enemyBullets.iterator()
         while (it.hasNext()) {
             val b = it.next()
@@ -390,7 +387,6 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     private fun drawGame(canvas: Canvas) {
         canvas.drawColor(Color.rgb(30, 30, 40))
 
-        // Сетка
         paint.color = Color.rgb(45, 45, 60)
         paint.strokeWidth = 2f
         var x = 0f
@@ -398,17 +394,12 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         var y = 0f
         while (y < height) { canvas.drawLine(0f, y, width.toFloat(), y, paint); y += 100f }
 
-        // Стены
         for (w in walls) w.draw(canvas, paint)
-
-        // Враги
         for (e in enemies) e.draw(canvas, paint)
 
-        // Пули
         for (b in bullets) b.draw(canvas, paint)
         for (b in enemyBullets) b.draw(canvas, paint)
 
-        // Игрок
         paint.color = Color.rgb(80, 200, 120)
         canvas.drawRect(
             playerX - playerSize / 2, playerY - playerSize / 2,
@@ -417,10 +408,8 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         paint.color = Color.WHITE
         canvas.drawCircle(playerX, playerY, 5f, paint)
 
-        // HUD
         drawHud(canvas)
 
-        // Джойстики
         moveJoystick?.draw(canvas)
         shootJoystick?.draw(canvas)
     }
@@ -430,7 +419,6 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         val heartSize = 40f
         val heartGap = 12f
 
-        // Сердечки
         for (i in 0 until playerMaxHp) {
             val hx = margin + i * (heartSize + heartGap)
             val hy = margin
@@ -442,7 +430,6 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
             drawHeart(canvas, hx, hy, heartSize)
         }
 
-        // Полоска маны
         val barX = margin
         val barY = margin + heartSize + 20f
         val barW = 300f
@@ -481,7 +468,6 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         canvas.drawPath(path, paint)
     }
 
-    // Мультитач — каждый палец ведёт свой джойстик
     override fun onTouchEvent(event: MotionEvent): Boolean {
         val action = event.actionMasked
         val pointerIndex = event.actionIndex
