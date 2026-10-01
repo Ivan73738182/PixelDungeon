@@ -13,25 +13,22 @@ class Enemy(
     val maxHp = 3
     var speed = 2.2f
 
-    // Дистанция ведения боя
     val preferredDistance = 280f
     val distanceTolerance = 60f
 
-    // Стрельба медленнее
     var shootTimer = 0L
     var shootInterval = 2500L
 
-    // Стейф (движение вбок)
+    var xpReward = 10
+
     private var strafeDir = if (Math.random() < 0.5) -1f else 1f
     private var strafeTimer = 0L
     private val strafeDuration = 1500L
 
-    // Уворот
     private var dodgeTimer = 0L
     private var dodgeDirX = 0f
     private var dodgeDirY = 0f
     private val dodgeDuration = 400L
-    private var lastDodgeCheck = 0L
 
     fun update(
         playerX: Float,
@@ -50,22 +47,17 @@ class Enemy(
 
         val now = System.currentTimeMillis()
 
-        // === УВОРОТ ОТ ПУЛЬ ===
         if (now - dodgeTimer > dodgeDuration) {
-            // Проверяем пули игрока рядом
             for (b in bullets) {
                 if (b.isEnemy) continue
                 val bdx = b.x - x
                 val bdy = b.y - y
                 val blen = Math.sqrt((bdx * bdx + bdy * bdy).toDouble()).toFloat()
-                // Пуля близко и летит примерно в нашу сторону
                 if (blen < 200f) {
                     val dot = (b.dx * bdx + b.dy * bdy) / (blen + 0.01f)
                     if (dot > 0.5f) {
-                        // Уворачиваемся перпендикулярно направлению пули
                         dodgeDirX = -b.dy
                         dodgeDirY = b.dx
-                        // Случайно выбираем сторону
                         if (Math.random() < 0.5) {
                             dodgeDirX = -dodgeDirX
                             dodgeDirY = -dodgeDirY
@@ -81,11 +73,9 @@ class Enemy(
         val moveY: Float
 
         if (now - dodgeTimer < dodgeDuration) {
-            // Активный уворот
             moveX = dodgeDirX * speed * 1.6f
             moveY = dodgeDirY * speed * 1.6f
         } else {
-            // Обычное поведение: держим дистанцию + стрейф
             val distStepX: Float
             val distStepY: Float
 
@@ -100,13 +90,11 @@ class Enemy(
                 distStepY = 0f
             }
 
-            // Меняем направление стрейфа время от времени
             if (now - strafeTimer > strafeDuration) {
                 strafeTimer = now
                 strafeDir = -strafeDir
             }
 
-            // Стрейф — движение перпендикулярно игроку
             val strafeX = -ny * speed * 0.6f * strafeDir
             val strafeY = nx * speed * 0.6f * strafeDir
 
@@ -114,7 +102,6 @@ class Enemy(
             moveY = distStepY + strafeY
         }
 
-        // Пробуем сдвинуться, учитывая стены и других врагов
         val tryX = x + moveX
         val tryY = y + moveY
 
@@ -175,7 +162,6 @@ class Enemy(
         paint.color = Color.WHITE
         canvas.drawCircle(x, y, 5f, paint)
 
-        // Полоска HP
         val barW = size
         val barH = 8f
         val barX = x - barW / 2
