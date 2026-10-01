@@ -13,6 +13,12 @@ class Enemy(
     val maxHp = 3
     var speed = 2.2f
 
+    // Дистанция, на которой враг останавливается и стреляет
+    val preferredDistance = 280f
+
+    // Допустимое отклонение от дистанции (чтобы не дёргался)
+    val distanceTolerance = 40f
+
     var shootTimer = 0L
     val shootInterval = 1500L
 
@@ -25,16 +31,40 @@ class Enemy(
         val nx = dx / len
         val ny = dy / len
 
-        val stepX = nx * speed
-        val stepY = ny * speed
+        // Если ближе "идеальной" дистанции — отходим назад
+        // Если дальше — идём вперёд
+        // Если в зоне tolerance — стоим
+        val moveDir: Float
+        if (len < preferredDistance - distanceTolerance) {
+            // Слишком близко — отходим
+            moveDir = -1f
+        } else if (len > preferredDistance + distanceTolerance) {
+            // Слишком далеко — идём вперёд
+            moveDir = 1f
+        } else {
+            // В идеальной зоне — стоим
+            return
+        }
+
+        val stepX = nx * speed * moveDir
+        val stepY = ny * speed * moveDir
 
         // По X
         if (!collidesWalls(x + stepX, y, walls) && !collidesEnemies(x + stepX, y, enemies)) {
             x += stepX
+        } else {
+            // Если не можем двигаться по X — пробуем скользить по Y
+            if (!collidesWalls(x, y + stepY, walls) && !collidesEnemies(x, y + stepY, enemies)) {
+                y += stepY
+            }
         }
         // По Y
         if (!collidesWalls(x, y + stepY, walls) && !collidesEnemies(x, y + stepY, enemies)) {
             y += stepY
+        } else {
+            if (!collidesWalls(x + stepX, y, walls) && !collidesEnemies(x + stepX, y, enemies)) {
+                x += stepX
+            }
         }
     }
 
