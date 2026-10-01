@@ -4,26 +4,37 @@ import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.view.WindowManager
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var gameView: GameView
+    private var gameView: GameView? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Полный экран
-        window.setFlags(
-            WindowManager.LayoutParams.FLAG_FULLSCREEN,
-            WindowManager.LayoutParams.FLAG_FULLSCREEN
-        )
+        try {
+            window.setFlags(
+                WindowManager.LayoutParams.FLAG_FULLSCREEN,
+                WindowManager.LayoutParams.FLAG_FULLSCREEN
+            )
 
-        // Скрываем системные кнопки (работает на большинстве устройств)
-        hideSystemUi()
+            hideSystemUi()
 
-        gameView = GameView(this)
-        setContentView(gameView)
+            gameView = GameView(this)
+            setContentView(gameView)
+
+        } catch (e: Throwable) {
+            // Показываем ошибку на экране
+            val tv = TextView(this)
+            tv.text = "КРАШ:\n\n${e.javaClass.simpleName}: ${e.message}\n\n${e.stackTraceToString()}"
+            tv.setTextColor(android.graphics.Color.RED)
+            tv.setBackgroundColor(android.graphics.Color.BLACK)
+            tv.textSize = 12f
+            tv.setPadding(20, 40, 20, 20)
+            setContentView(tv)
+        }
     }
 
     private fun hideSystemUi() {
@@ -39,7 +50,6 @@ class MainActivity : AppCompatActivity() {
                 )
             }
         } catch (e: Exception) {
-            // Игнорируем — не критично
         }
     }
 
@@ -50,11 +60,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        gameView.resume()
+        gameView?.resume()
     }
 
     override fun onPause() {
         super.onPause()
-        gameView.pause()
+        gameView?.pause()
     }
 }
