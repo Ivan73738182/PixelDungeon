@@ -44,7 +44,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
 
     override fun surfaceCreated(holder: SurfaceHolder) {
         try {
-            // Стартовая позиция — слева, в свободной зоне
+            // Старт — в левой части, чуть выше низа
             playerX = width * 0.25f
             playerY = height * 0.5f
 
@@ -60,6 +60,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
             )
 
             buildLevel()
+            findFreeStart()
 
             running = true
             thread = Thread(this).also { it.start() }
@@ -84,11 +85,31 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
             walls.add(Wall((cols - 1) * tile, j * tile, tile, tile))
         }
 
-        // Угловые препятствия — центр пустой
-        walls.add(Wall(tile * 3, tile * 3, tile, tile))
-        walls.add(Wall(width - tile * 4, tile * 3, tile, tile))
-        walls.add(Wall(tile * 3, height - tile * 4, tile, tile))
-        walls.add(Wall(width - tile * 4, height - tile * 4, tile, tile))
+        // Внутренние препятствия — прижаты к краям, центр и старт свободны
+        walls.add(Wall(tile * 1.5f, tile * 3f, tile, tile * 2f))
+        walls.add(Wall(width - tile * 2.5f, tile * 3f, tile, tile * 2f))
+        walls.add(Wall(tile * 1.5f, height - tile * 5f, tile, tile * 2f))
+        walls.add(Wall(width - tile * 2.5f, height - tile * 5f, tile, tile * 2f))
+    }
+
+    private fun findFreeStart() {
+        if (!collidesWithWalls(playerX, playerY)) return
+
+        // Ищем свободную клетку по всей карте
+        val step = 60f
+        var yy = step * 2
+        while (yy < height - step * 2) {
+            var xx = step * 2
+            while (xx < width - step * 2) {
+                if (!collidesWithWalls(xx, yy)) {
+                    playerX = xx
+                    playerY = yy
+                    return
+                }
+                xx += step
+            }
+            yy += step
+        }
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
