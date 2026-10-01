@@ -18,7 +18,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     // Игрок
     private var playerX = 0f
     private var playerY = 0f
-    private val playerSize = 80f
+    private val playerSize = 60f
     private val playerSpeed = 8f
 
     // Джойстики
@@ -28,11 +28,11 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     // Пули
     private val bullets = mutableListOf<Bullet>()
 
-    // Кулдаун стрельбы (мс)
+    // Кулдаун стрельбы
     private var lastShotTime = 0L
-    private val shotCooldown = 250L
+    private val shotCooldown = 220L
 
-    // Стены (уровень)
+    // Стены
     private val walls = mutableListOf<Wall>()
 
     private var lastTime = 0L
@@ -44,8 +44,9 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
 
     override fun surfaceCreated(holder: SurfaceHolder) {
         try {
-            playerX = width / 2f
-            playerY = height / 2f
+            // Стартовая позиция — слева, в свободной зоне
+            playerX = width * 0.25f
+            playerY = height * 0.5f
 
             moveJoystick = Joystick(
                 width * 0.15f,
@@ -74,27 +75,16 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         val rows = (height / tile).toInt()
 
         // Границы по краям
-        // Верх
         for (i in 0 until cols) {
             walls.add(Wall(i * tile, 0f, tile, tile))
-        }
-        // Низ — оставим место для джойстиков, но стенка нужна
-        for (i in 0 until cols) {
             walls.add(Wall(i * tile, (rows - 1) * tile, tile, tile))
         }
-        // Лево
         for (j in 0 until rows) {
             walls.add(Wall(0f, j * tile, tile, tile))
-        }
-        // Право
-        for (j in 0 until rows) {
             walls.add(Wall((cols - 1) * tile, j * tile, tile, tile))
         }
 
-        // Внутренние препятствия (несколько стенок для интереса)
-        // Центральный блок
-        walls.add(Wall(width / 2f - tile, height / 2f - tile, tile, tile))
-        // Углы
+        // Угловые препятствия — центр пустой
         walls.add(Wall(tile * 3, tile * 3, tile, tile))
         walls.add(Wall(width - tile * 4, tile * 3, tile, tile))
         walls.add(Wall(tile * 3, height - tile * 4, tile, tile))
@@ -152,20 +142,18 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     private fun updatePlayer() {
         val mj = moveJoystick ?: return
 
-        // Пробуем сдвинуться отдельно по X и по Y — чтобы скользить вдоль стен
         val newX = playerX + mj.dx * playerSpeed
         val newY = playerY + mj.dy * playerSpeed
 
-        // Проверяем X
         if (!collidesWithWalls(newX, playerY)) {
             playerX = newX
         }
-        // Проверяем Y
         if (!collidesWithWalls(playerX, newY)) {
             playerY = newY
         }
 
-        // Границы экрана (на всякий случай)
+        pushOutOfWalls()
+
         if (playerX < playerSize / 2) playerX = playerSize / 2
         if (playerX > width - playerSize / 2) playerX = width - playerSize / 2
         if (playerY < playerSize / 2) playerY = playerSize / 2
@@ -184,6 +172,32 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
             }
         }
         return false
+    }
+
+    private fun pushOutOfWalls() {
+        val half = playerSize / 2f
+        for (w in walls) {
+            val left = playerX - half
+            val right = playerX + half
+            val top = playerY - half
+            val bottom = playerY + half
+
+            if (right > w.x && left < w.x + w.w && bottom > w.y && top < w.y + w.h) {
+                val overlapLeft = right - w.x
+                val overlapRight = (w.x + w.w) - left
+                val overlapTop = bottom - w.y
+                val overlapBottom = (w.y + w.h) - top
+
+                val minOverlap = minOf(overlapLeft, overlapRight, overlapTop, overlapBottom)
+
+                when (minOverlap) {
+                    overlapLeft -> playerX = w.x - half
+                    overlapRight -> playerX = w.x + w.w + half
+                    overlapTop -> playerY = w.y - half
+                    overlapBottom -> playerY = w.y + w.h + half
+                }
+            }
+        }
     }
 
     private fun updateShooting() {
@@ -210,13 +224,11 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
             val b = it.next()
             b.update()
 
-            // Выход за экран
             if (b.x < 0 || b.x > width || b.y < 0 || b.y > height) {
                 it.remove()
                 continue
             }
 
-            // Столкновение со стенами
             for (w in walls) {
                 if (b.x > w.x && b.x < w.x + w.w && b.y > w.y && b.y < w.y + w.h) {
                     it.remove()
@@ -257,7 +269,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
             y += 100f
         }
 
-        // Стены (кирпичики подземелья)
+        // Стены
         for (w in walls) {
             w.draw(canvas, paint)
         }
@@ -277,7 +289,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
             paint
         )
         paint.color = Color.WHITE
-        canvas.drawCircle(playerX, playerY, 6f, paint)
+        canvas.drawCircle(playerX, playerY, 5f, paint)
 
         // Джойстики
         moveJoystick?.draw(canvas)
