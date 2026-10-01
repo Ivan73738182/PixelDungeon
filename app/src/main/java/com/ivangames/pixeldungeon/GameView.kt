@@ -19,16 +19,21 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     private var playerX = 0f
     private var playerY = 0f
     private val playerSize = 80f
+    private val playerSpeed = 8f
 
-    // Джойстики — создадим сразу, чтобы не было NPE
+    // Джойстики
     private var moveJoystick: Joystick? = null
     private var shootJoystick: Joystick? = null
 
-    // Скорость игрока
-    private val playerSpeed = 8f
-
     // Пули
     private val bullets = mutableListOf<Bullet>()
+
+    // Кулдаун стрельбы (мс)
+    private var lastShotTime = 0L
+    private val shotCooldown = 250L
+
+    // Стены (уровень)
+    private val walls = mutableListOf<Wall>()
 
     private var lastTime = 0L
 
@@ -44,20 +49,56 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
 
             moveJoystick = Joystick(
                 width * 0.15f,
-                height * 0.72f,
+                height * 0.75f,
                 Math.min(width, height) * 0.12f
             )
             shootJoystick = Joystick(
                 width * 0.85f,
-                height * 0.72f,
+                height * 0.75f,
                 Math.min(width, height) * 0.12f
             )
+
+            buildLevel()
 
             running = true
             thread = Thread(this).also { it.start() }
         } catch (e: Throwable) {
             android.util.Log.e("PixelDungeon", "surfaceCreated crash", e)
         }
+    }
+
+    private fun buildLevel() {
+        walls.clear()
+        val tile = 120f
+        val cols = (width / tile).toInt()
+        val rows = (height / tile).toInt()
+
+        // Границы по краям
+        // Верх
+        for (i in 0 until cols) {
+            walls.add(Wall(i * tile, 0f, tile, tile))
+        }
+        // Низ — оставим место для джойстиков, но стенка нужна
+        for (i in 0 until cols) {
+            walls.add(Wall(i * tile, (rows - 1) * tile, tile, tile))
+        }
+        // Лево
+        for (j in 0 until rows) {
+            walls.add(Wall(0f, j * tile, tile, tile))
+        }
+        // Право
+        for (j in 0 until rows) {
+            walls.add(Wall((cols - 1) * tile, j * tile, tile, tile))
+        }
+
+        // Внутренние препятствия (несколько стенок для интереса)
+        // Центральный блок
+        walls.add(Wall(width / 2f - tile, height / 2f - tile, tile, tile))
+        // Углы
+        walls.add(Wall(tile * 3, tile * 3, tile, tile))
+        walls.add(Wall(width - tile * 4, tile * 3, tile, tile))
+        walls.add(Wall(tile * 3, height - tile * 4, tile, tile))
+        walls.add(Wall(width - tile * 4, height - tile * 4, tile, tile))
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
@@ -103,14 +144,86 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     }
 
     private fun update(dt: Long) {
-        val mj = moveJoystick ?: return
-        playerX += mj.dx * playerSpeed
-        playerY += mj.dy * playerSpeed
+        updatePlayer()
+        updateShooting()
+        updateBullets()
+    }
 
+    private fun updatePlayer() {
+        val mj = moveJoystick ?: return
+
+        // Пробуем сдвинуться отдельно по X и по Y — чтобы скользить вдоль стен
+        val newX = playerX + mj.dx * playerSpeed
+        val newY = playerY + mj.dy * playerSpeed
+
+        // Проверяем X
+        if (!collidesWithWalls(newX, playerY)) {
+            playerX = newX
+        }
+        // Проверяем Y
+        if (!collidesWithWalls(playerX, newY)) {
+            playerY = newY
+        }
+
+        // Границы экрана (на всякий случай)
         if (playerX < playerSize / 2) playerX = playerSize / 2
         if (playerX > width - playerSize / 2) playerX = width - playerSize / 2
         if (playerY < playerSize / 2) playerY = playerSize / 2
         if (playerY > height - playerSize / 2) playerY = height - playerSize / 2
+    }
+
+    private fun collidesWithWalls(x: Float, y: Float): Boolean {
+        val half = playerSize / 2f
+        val left = x - half
+        val right = x + half
+        val top = y - half
+        val bottom = y + half
+        for (w in walls) {
+            if (right > w.x && left < w.x + w.w && bottom > w.y && top < w.y + w.h) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun updateShooting() {
+        val sj = shootJoystick ?: return
+        if (sj.dx == 0f && sj.dy == 0f) return
+
+        val now = System.currentTimeMillis()
+        if (now - lastShotTime < shotCooldown) return
+        lastShotTime = now
+
+        val bullet = Bullet(
+            playerX,
+            playerY,
+            sj.dx,
+            sj.dy,
+            speed = 18f
+        )
+        bullets.add(bullet)
+    }
+
+    private fun updateBullets() {
+        val it = bullets.iterator()
+        while (it.hasNext()) {
+            val b = it.next()
+            b.update()
+
+            // Выход за экран
+            if (b.x < 0 || b.x > width || b.y < 0 || b.y > height) {
+                it.remove()
+                continue
+            }
+
+            // Столкновение со стенами
+            for (w in walls) {
+                if (b.x > w.x && b.x < w.x + w.w && b.y > w.y && b.y < w.y + w.h) {
+                    it.remove()
+                    break
+                }
+            }
+        }
     }
 
     private fun drawFrame() {
@@ -130,8 +243,8 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     private fun drawGame(canvas: Canvas) {
         canvas.drawColor(Color.rgb(30, 30, 40))
 
-        // Сетка
-        paint.color = Color.rgb(50, 50, 65)
+        // Сетка пола
+        paint.color = Color.rgb(45, 45, 60)
         paint.strokeWidth = 2f
         var x = 0f
         while (x < width) {
@@ -144,6 +257,16 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
             y += 100f
         }
 
+        // Стены (кирпичики подземелья)
+        for (w in walls) {
+            w.draw(canvas, paint)
+        }
+
+        // Пули
+        for (b in bullets) {
+            b.draw(canvas, paint)
+        }
+
         // Игрок
         paint.color = Color.rgb(80, 200, 120)
         canvas.drawRect(
@@ -153,15 +276,8 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
             playerY + playerSize / 2,
             paint
         )
-
-        // Глаз
         paint.color = Color.WHITE
         canvas.drawCircle(playerX, playerY, 6f, paint)
-
-        // Пули
-        for (b in bullets) {
-            b.draw(canvas, paint)
-        }
 
         // Джойстики
         moveJoystick?.draw(canvas)
