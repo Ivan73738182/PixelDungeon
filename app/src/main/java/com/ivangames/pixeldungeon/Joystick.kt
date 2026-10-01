@@ -12,8 +12,8 @@ class Joystick(
 ) {
     var knobX: Float = centerX
     var knobY: Float = centerY
-    var dx: Float = 0f  // -1..1
-    var dy: Float = 0f  // -1..1
+    var dx: Float = 0f
+    var dy: Float = 0f
     var active: Boolean = false
 
     private val bgPaint = Paint().apply {

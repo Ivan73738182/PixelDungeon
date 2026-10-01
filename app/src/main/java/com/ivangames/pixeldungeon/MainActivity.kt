@@ -1,5 +1,6 @@
 package com.ivangames.pixeldungeon
 
+import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.view.View
@@ -26,15 +27,18 @@ class MainActivity : AppCompatActivity() {
             setContentView(gameView)
 
         } catch (e: Throwable) {
-            // Показываем ошибку на экране
-            val tv = TextView(this)
-            tv.text = "КРАШ:\n\n${e.javaClass.simpleName}: ${e.message}\n\n${e.stackTraceToString()}"
-            tv.setTextColor(android.graphics.Color.RED)
-            tv.setBackgroundColor(android.graphics.Color.BLACK)
-            tv.textSize = 12f
-            tv.setPadding(20, 40, 20, 20)
-            setContentView(tv)
+            showError(e)
         }
+    }
+
+    private fun showError(e: Throwable) {
+        val tv = TextView(this)
+        tv.text = "КРАШ:\n\n${e.javaClass.simpleName}: ${e.message}\n\n${e.stackTraceToString()}"
+        tv.setTextColor(Color.RED)
+        tv.setBackgroundColor(Color.BLACK)
+        tv.textSize = 11f
+        tv.setPadding(20, 40, 20, 20)
+        setContentView(tv)
     }
 
     private fun hideSystemUi() {

@@ -20,17 +20,16 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     private var playerY = 0f
     private val playerSize = 80f
 
-    // Джойстики
-    private lateinit var moveJoystick: Joystick
-    private lateinit var shootJoystick: Joystick
+    // Джойстики — создадим сразу, чтобы не было NPE
+    private var moveJoystick: Joystick? = null
+    private var shootJoystick: Joystick? = null
 
     // Скорость игрока
     private val playerSpeed = 8f
 
-    // Пули (пока пусто)
+    // Пули
     private val bullets = mutableListOf<Bullet>()
 
-    // Время
     private var lastTime = 0L
 
     init {
@@ -39,24 +38,26 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
-        // Центр игрока
-        playerX = width / 2f
-        playerY = height / 2f
+        try {
+            playerX = width / 2f
+            playerY = height / 2f
 
-        // Джойстики
-        moveJoystick = Joystick(
-            width * 0.15f,
-            height * 0.72f,
-            Math.min(width, height) * 0.12f
-        )
-        shootJoystick = Joystick(
-            width * 0.85f,
-            height * 0.72f,
-            Math.min(width, height) * 0.12f
-        )
+            moveJoystick = Joystick(
+                width * 0.15f,
+                height * 0.72f,
+                Math.min(width, height) * 0.12f
+            )
+            shootJoystick = Joystick(
+                width * 0.85f,
+                height * 0.72f,
+                Math.min(width, height) * 0.12f
+            )
 
-        running = true
-        thread = Thread(this).also { it.start() }
+            running = true
+            thread = Thread(this).also { it.start() }
+        } catch (e: Throwable) {
+            android.util.Log.e("PixelDungeon", "surfaceCreated crash", e)
+        }
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
@@ -70,7 +71,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     }
 
     fun resume() {
-        if (!running) {
+        if (!running && width > 0 && height > 0) {
             running = true
             thread = Thread(this).also { it.start() }
         }
@@ -86,8 +87,13 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
             val dt = if (lastTime == 0L) 0L else now - lastTime
             lastTime = now
 
-            update(dt)
-            drawFrame()
+            try {
+                update(dt)
+                drawFrame()
+            } catch (e: Throwable) {
+                android.util.Log.e("PixelDungeon", "loop crash", e)
+                running = false
+            }
 
             try {
                 Thread.sleep(16)
@@ -97,22 +103,17 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     }
 
     private fun update(dt: Long) {
-        // Движение игрока по левому джойстику
-        playerX += moveJoystick.dx * playerSpeed
-        playerY += moveJoystick.dy * playerSpeed
+        val mj = moveJoystick ?: return
+        playerX += mj.dx * playerSpeed
+        playerY += mj.dy * playerSpeed
 
-        // Не выходим за границы
         if (playerX < playerSize / 2) playerX = playerSize / 2
         if (playerX > width - playerSize / 2) playerX = width - playerSize / 2
         if (playerY < playerSize / 2) playerY = playerSize / 2
         if (playerY > height - playerSize / 2) playerY = height - playerSize / 2
-
-        // Стрельба правым джойстиком (пока не сделано)
-        // TODO: пули
     }
 
     private fun drawFrame() {
-        val holder = holder
         var canvas: Canvas? = null
         try {
             canvas = holder.lockCanvas()
@@ -127,10 +128,9 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     }
 
     private fun drawGame(canvas: Canvas) {
-        // Фон
         canvas.drawColor(Color.rgb(30, 30, 40))
 
-        // Сетка пола (для атмосферы подземелья)
+        // Сетка
         paint.color = Color.rgb(50, 50, 65)
         paint.strokeWidth = 2f
         var x = 0f
@@ -144,7 +144,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
             y += 100f
         }
 
-        // Игрок (квадрат)
+        // Игрок
         paint.color = Color.rgb(80, 200, 120)
         canvas.drawRect(
             playerX - playerSize / 2,
@@ -154,7 +154,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
             paint
         )
 
-        // Глаза (для направления — пока просто точка)
+        // Глаз
         paint.color = Color.WHITE
         canvas.drawCircle(playerX, playerY, 6f, paint)
 
@@ -164,14 +164,13 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         }
 
         // Джойстики
-        moveJoystick.draw(canvas)
-        shootJoystick.draw(canvas)
+        moveJoystick?.draw(canvas)
+        shootJoystick?.draw(canvas)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        // Передаём джойстикам, если попали
-        if (moveJoystick.handleTouch(event)) return true
-        if (shootJoystick.handleTouch(event)) return true
+        moveJoystick?.handleTouch(event)
+        shootJoystick?.handleTouch(event)
         return true
     }
 }
