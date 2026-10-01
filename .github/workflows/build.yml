@@ -24,6 +24,14 @@ jobs:
       with:
         gradle-version: 8.2
 
+    - name: Decode keystore
+      run: |
+        echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/keystore.jks
+        printf 'storeFile=keystore.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+          "${{ secrets.KEYSTORE_PASSWORD }}" \
+          "${{ secrets.KEY_ALIAS }}" \
+          "${{ secrets.KEY_PASSWORD }}" > keystore.properties
+
     - name: Build Release APK
       run: gradle assembleRelease --no-daemon
 
